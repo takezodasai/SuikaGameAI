@@ -62,8 +62,12 @@ namespace UnityEngine {
 }
 // Only the optional diagnostic entry point is stubbed; real physics is tested in Unity.
 public class SuikaPhysicsSimulator {
- public class Result {}
- public static Result Predict(PlayerController p,GameManager g,float x) { return new Result(); }
+ public class Result { public object trace,diagnostics,fruits,reference_fruits; public double elapsed_ms,reference_elapsed_ms; public int score,reference_score; public bool game_over,reference_game_over; }
+ public static Result Predict(PlayerController p,GameManager g,float x,int ticks=-1) { return new Result(); }
+}
+public static class PredictionDiagnostics {
+ public static void Begin(PlayerController p,GameManager g) {} public static void Stop() {}
+ public static object Compare(object trace) { return null; }
 }
 public class PlayerController {
  public bool StepControlLocked;
@@ -228,6 +232,22 @@ try {
         Assert (($timed.step_result.physics_steps*$dt) -ge 0.499) 'Post-drop timer included movement'
     }
     [UnityEngine.Time]::fixedDeltaTime=0.02
+    $stepper.BeginEpisode('diagnostic-horizon')
+    $command.episode_id=$stepper.GetType().GetField('episodeId', $flags).GetValue($stepper)
+    $command.action_id=1; $command.x=0.5; $command.command='compare_step'; $command.comparison_post_drop_steps=100
+    $handler.Invoke($stepper, @($command)) | Out-Null
+    Assert ($stepper.GetType().GetField('targetTicks', $flags).GetValue($stepper) -eq 100) 'Diagnostic horizon ignored'
+    $stepper.BeginEpisode('normal-horizon')
+    $command.episode_id=$stepper.GetType().GetField('episodeId', $flags).GetValue($stepper)
+    $command.command='step'
+    $handler.Invoke($stepper, @($command)) | Out-Null
+    Assert ($stepper.GetType().GetField('targetTicks', $flags).GetValue($stepper) -eq 25) 'Diagnostic horizon changed normal step'
+    $stepper.BeginEpisode('invalid-horizon')
+    $command.episode_id=$stepper.GetType().GetField('episodeId', $flags).GetValue($stepper)
+    $command.command='compare_step'; $command.comparison_post_drop_steps=151
+    $handler.Invoke($stepper, @($command)) | Out-Null
+    Assert (-not $stepper.playerController.StepControlLocked) 'Invalid horizon locked player'
+    Write-Output 'PASS: diagnostic horizon, normal horizon unchanged, invalid horizon rejected'
     Write-Output 'PASS: step retries, busy rejection, completion window, coordinate rejection, stale/terminal commands'
 } finally {
     $c.StopCommunication()

@@ -133,3 +133,16 @@ python -B check_unity_prediction.py --output prediction_comparison.json
 精度制約：公開APIによるコピーでは接触solver履歴を移植していない。進行中の合体は拒否する。予測では合体元の削除/終了判定を各tick末に行うが、実ゲームは描画フレーム末/Updateで行うため複数tick/フレームでは時間差があり得る。現在見えていない将来NEXTは生成せず、UnityEngine.Random.stateを不変検査する。同期処理はmain threadを計算時間ぶん占有する。正確性はDEVELOPMENT_LOG.mdと測定JSONを参照。
 
 調査資料：[Unity 2022.3 PhysicsScene2D.Simulate](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/PhysicsScene2D.Simulate.html)。ローカルSceneのみの演算であり、FixedUpdateは自動呼出しされないため移動の数値tickは予測側で明示的に実行する。
+
+## 2026-10-20 更新単位の任意診断
+
+compare_stepに `trace_physics: true` を指定すると、同じ盤面で診断なし予測→診断あり予測→実stepを各1回実行する。action_idの再送排除は従来どおり。通常stepに二重予測は追加しない。
+
+`comparison_post_drop_steps` はcompare_step専用（0=従来、1..150=指定更新数、範囲外拒否）。通常stepは値を無視し、0.5秒以上の従来仕様を維持。
+
+結果predictionへdiagnostics（initial/first mismatch snapshots、各tickの誤差、接触/合体/生成/削除イベント、打切りフラグ）とreference_*（同一状態の診断なし結果）、scene_create_ms/copy_ms/simulation_ms/cleanup_schedule_msを追加。diagnosticsは最大512更新。IDは元果物IDと合体元の系譜で対応付ける。内部接触状態を復元したわけではない。詳細と限界はSTEP4_DIAGNOSTICS.md参照。
+
+
+## STEP 4-B evaluation metadata (2026-10-20)
+
+compare_step keeps protocol_version=2 and existing action_id retry semantics. Diagnostic Report adds final_actual/final_prediction Frame (same post-physics phase and bounded Recorder). Result adds initial_next_fruit_type (visible NEXT only) and game_over_height, captured at Run start. No new command or normal step horizon change. Python/evaluate_unity_prediction.py uses trace_physics=true and comparison_post_drop_steps=1..150; ordinary step remains unchanged. Exact initial public snapshot is diagnostics.initial_actual; previous Python observation may be older. See STEP4B_EVALUATION.md for metrics, eligibility, JSONL persistence and exclusions.

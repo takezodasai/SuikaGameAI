@@ -36,6 +36,7 @@ public class FruitEvolution : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        PredictionDiagnostics.Collision(this, collision);
         if (isMerging) return;
 
         FruitEvolution otherFruit = collision.gameObject.GetComponent<FruitEvolution>();
@@ -56,6 +57,7 @@ public class FruitEvolution : MonoBehaviour
                 // スイカ同士の場合は消滅（得点加算はしない）
                 if (fruitType == 10)
                 {
+                    PredictionDiagnostics.Merge(this, otherFruit, null);
                     RemoveFruit(otherFruit);
                     RemoveFruit(this);
                     if (Simulation == null) udpcomm.SendObservationsWaterMelon();
@@ -98,6 +100,8 @@ public class FruitEvolution : MonoBehaviour
                         Debug.LogError("Evolved prefab does not have a FruitEvolution component.");
                     }
 
+                    PredictionDiagnostics.Merge(this, otherFruit, fe);
+
                     // 得点加算：進化する前の fruitType を使ってスコアを加算（例：サクランボ→イチゴの場合は fruitType=0 なので 1点）
                     if (Simulation != null) Simulation.AddScore(fruitType);
                     else if (ScoreManager.Instance != null)
@@ -129,8 +133,11 @@ public class FruitEvolution : MonoBehaviour
             }
         }
     }
+    void OnDestroy() { PredictionDiagnostics.Removed(this, "destroyed"); }
+
     void RemoveFruit(FruitEvolution fruit)
     {
+        PredictionDiagnostics.Removed(fruit, "remove_requested");
         if (Simulation == null) Destroy(fruit.gameObject);
         else Simulation.DeferRemoval(fruit.gameObject);
     }

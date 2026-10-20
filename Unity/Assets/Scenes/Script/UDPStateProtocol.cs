@@ -139,6 +139,8 @@ public partial class UDPCommunicatorUnity
         public string command, request_id, episode_id;
         public string stream_id;
         public long action_id;
+        public bool trace_physics;
+        public int comparison_post_drop_steps;
         public float x;
     }
     public partial class Observation

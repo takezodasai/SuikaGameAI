@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from check_unity_prediction import compare, meets_tolerance
+from check_unity_prediction import compare, meets_tolerance, summarize_trace
 import unittest
 class PredictionComparisonTests(unittest.TestCase):
  def fruit(self, id, x=0):
@@ -17,4 +17,14 @@ class PredictionComparisonTests(unittest.TestCase):
  def test_missing_fruit_not_zero_error(self):
   r=self.check([self.fruit(1)],[])
   self.assertIsNone(r['max_position_error']);self.assertFalse(meets_tolerance(r))
+ def test_transient_divergence_not_hidden_by_final_agreement(self):
+  d=dict(first_numeric_tick=1,first_tolerance_tick=1,actual_ticks=2,predicted_ticks=2,truncated=False,
+         errors=[dict(tick=0,position=0,velocity=0),dict(tick=1,position=0.1,velocity=2),dict(tick=2,position=0,velocity=0)])
+  summary=summarize_trace(d)
+  self.assertEqual(summary['max_position_over_time'],0.1)
+  self.assertEqual(summary['first_numeric_tick'],1)
+ def test_trace_truncation_and_tick_mismatch_are_visible(self):
+  d=dict(first_numeric_tick=-1,first_tolerance_tick=-1,actual_ticks=4,predicted_ticks=3,truncated=True,errors=[])
+  summary=summarize_trace(d)
+  self.assertFalse(summary['ticks_match']);self.assertTrue(summary['truncated'])
 if __name__=='__main__': unittest.main()

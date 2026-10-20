@@ -56,20 +56,43 @@ def meets_tolerance(row):
             and row['max_angle_error'] <= 0.5 and row['max_angular_velocity_error'] <= 1.0)
 
 
+def summarize_trace(diagnostics):
+    errors = diagnostics['errors']
+    selected = {0, 1, 5, 10, 25, errors[-1]['tick']} if errors else set()
+    return {'first_numeric_tick': diagnostics['first_numeric_tick'],
+            'first_tolerance_tick': diagnostics['first_tolerance_tick'],
+            'ticks_match': diagnostics['actual_ticks'] == diagnostics['predicted_ticks'],
+            'truncated': diagnostics['truncated'],
+            'max_position_over_time': max((e['position'] for e in errors), default=0),
+            'max_velocity_over_time': max((e['velocity'] for e in errors), default=0),
+            'checkpoints': [e for e in errors if e['tick'] in selected]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--merge-case', action='store_true', help='Find a visible same-type NEXT and compare two centered drops')
+    parser.add_argument('--post-drop-steps', type=int, default=0, choices=range(151), help='Diagnostic horizon; 0 keeps normal 0.5 seconds')
+    parser.add_argument('--trace', action='store_true', help='Capture bounded per-physics-tick diagnostics')
     parser.add_argument('--output', type=Path, help='Save measured comparison report')
     args = parser.parse_args()
     with UnityEnv() as env:
-        env.reset(timeout=30)
+        initial = env.reset(timeout=30)
+        if args.merge_case:
+            for attempt in range(10):
+                if initial['current_fruit']['type'] == initial['next_fruit_type']:
+                    break
+                initial = env.reset(timeout=5)
+            else:
+                raise RuntimeError('No same-type visible NEXT in 10 resets; test not executed')
         original_send = env._send
         def send(message):
             if message.get('command') == 'step':
-                message = dict(message, command='compare_step')
+                message = dict(message, command='compare_step', trace_physics=args.trace, comparison_post_drop_steps=args.post_drop_steps)
             original_send(message)
         env._send = send
         results = []
-        for x in (0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0, 1):
+        targets = (0.65, 0.65) if args.merge_case else (0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0, 1)
+        for x in targets:
             try:
                 state, reward, done, info = env.step(x, timeout=20)
             except (RuntimeError, TimeoutError) as error:
@@ -84,7 +107,20 @@ def main():
                        applied_x_error=abs(prediction['applied_x']-info['applied_x']),
                        predicted_ticks=prediction['physics_steps'], actual_ticks=state['actual_total_physics_steps'])
             row['within_tolerance'] = meets_tolerance(row)
-            print(json.dumps(row), flush=True)
+            row['timing'] = {k:prediction[k] for k in ('scene_create_ms','copy_ms','simulation_ms','cleanup_schedule_ms')}
+            if prediction.get('reference_elapsed_ms', -1) >= 0:
+                reference = dict(prediction, fruits=prediction['reference_fruits'], score=prediction['reference_score'], game_over=prediction['reference_game_over'])
+                row['reference_error'] = compare(reference, state)
+                row['reference_elapsed_ms'] = prediction['reference_elapsed_ms']
+                row['diagnostic_prediction_delta'] = compare(reference, dict(state,fruits=prediction['fruits'],score=prediction['score'],game_over=prediction['game_over']))
+            diagnostics = prediction.get('diagnostics')
+            if diagnostics:
+                row['diagnostics'] = diagnostics
+                row['diagnostic_summary'] = summarize_trace(diagnostics)
+                print(json.dumps({'x':x,'first_numeric_tick':diagnostics['first_numeric_tick'],
+                                  'first_tolerance_tick':diagnostics['first_tolerance_tick'],
+                                  'final_error':diagnostics['errors'][-1] if diagnostics['errors'] else None}),flush=True)
+            print(json.dumps({k:v for k,v in row.items() if k not in ('diagnostics','diagnostic_summary')}), flush=True)
             results.append(row)
             if done: break
         env.reset(timeout=10)

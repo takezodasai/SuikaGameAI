@@ -14,13 +14,22 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         public string status = "experimental", limitation;
         public bool validated_for_search = false;
         public int initial_contact_count;
+        public int initial_next_fruit_type;
+        public float game_over_height;
         public UDPCommunicatorUnity.BoardFruit[] initial_fruits;
         public UDPCommunicatorUnity.BoardFruit[] fruits;
         public int score, reward, physics_steps, movement_steps, post_drop_steps, merges;
         public bool game_over, drop_success, source_unchanged;
         public float requested_x, applied_x, movement_seconds, fixed_delta_time;
-        public double elapsed_ms;
+        public double elapsed_ms, scene_create_ms, copy_ms, simulation_ms, cleanup_schedule_ms;
+        public PredictionDiagnostics.Report diagnostics;
+        public double reference_elapsed_ms = -1;
+        public UDPCommunicatorUnity.BoardFruit[] reference_fruits;
+        public int reference_score;
+        public bool reference_game_over;
+        [NonSerialized] public PredictionDiagnostics.Recorder trace;
     }
+    public PredictionDiagnostics.Recorder Trace { get; private set; }
     readonly Scene scene;
     readonly PhysicsScene2D physics;
     readonly GameObject staging;
@@ -74,6 +83,8 @@ public sealed class SuikaPhysicsSimulator : IDisposable
                 if (material != null) materials.Add(material);
             }
         }
+        if (fruit != null && Trace != null && PredictionDiagnostics.Live != null && PredictionDiagnostics.Live.aliases.ContainsKey(source.GetComponent<FruitEvolution>()))
+            Trace.Watch(fruit, PredictionDiagnostics.Live.Alias(source.GetComponent<FruitEvolution>()));
         var originalBody = source.GetComponent<Rigidbody2D>();
         var body = clone.GetComponent<Rigidbody2D>();
         if (body != null)
@@ -138,7 +149,11 @@ public sealed class SuikaPhysicsSimulator : IDisposable
     {
         // Simulate invokes collision callbacks synchronously; retain original colliders until
         // this tick finishes, like Destroy at the end of a one-physics-tick rendered frame.
-        foreach (var fruit in pendingRemoval) fruit.SetActive(false);
+        foreach (var fruit in pendingRemoval)
+        {
+            PredictionDiagnostics.Removed(fruit.GetComponent<FruitEvolution>(), "deactivated");
+            fruit.SetActive(false);
+        }
         pendingRemoval.Clear();
     }
     bool IsGameOver(GameObject nextHeld)
@@ -182,8 +197,14 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         int initialScore = ScoreManager.Instance.GetScore(), best = GameScoreStatic.maxScore;
         var timer = Stopwatch.StartNew();
         Result result;
-        using (var simulation = new SuikaPhysicsSimulator(manager))
-            result = simulation.Run(player, x, range, dt, postDropSteps);
+        var simulation = new SuikaPhysicsSimulator(manager);
+        double createMs = timer.Elapsed.TotalMilliseconds;
+        simulation.Trace = PredictionDiagnostics.Live != null ? new PredictionDiagnostics.Recorder() : null;
+        try { result = simulation.Run(player, x, range, dt, postDropSteps); }
+        finally { if(simulation.Trace!=null)simulation.Trace.recording=false; simulation.Dispose(); }
+        result.scene_create_ms = createMs;
+        result.trace = simulation.Trace;
+        result.cleanup_schedule_ms = simulation.cleanupMs;
         result.elapsed_ms = timer.Elapsed.TotalMilliseconds;
         result.source_unchanged = before == SourceSignature(player) &&
             random.Equals(UnityEngine.Random.state) && ScoreManager.Instance.GetScore() == initialScore &&
@@ -210,9 +231,13 @@ public sealed class SuikaPhysicsSimulator : IDisposable
     }
     [Serializable] class SourceBody { public Vector3 p; public Quaternion q; public Vector2 v; public float w; public bool sleeping, merging; }
 
+    double cleanupMs;
+
     Result Run(PlayerController player, float x, PlayerController.DropRange range, float dt, int postSteps)
     {
+        var copyTimer = Stopwatch.StartNew();
         var result = new Result { requested_x = x, score = score, fixed_delta_time = dt,
+            initial_next_fruit_type = player.nextFruitObject.GetComponent<FruitEvolution>().fruitType, game_over_height = gameOverHeight,
             limitation = "Cold contact cache; merges retired per tick; game-over checked per tick, live per rendered Update. Not bit-exact for arbitrary active contacts or multi-tick frames." };
         var liveFruits = Object.FindObjectsOfType<FruitEvolution>();
         // Collider scripts and active merges cannot be reconstructed from STEP 2 JSON.
@@ -254,6 +279,10 @@ public sealed class SuikaPhysicsSimulator : IDisposable
             if (obj.CompareTag("Wall")) walls.AddRange(obj.GetComponents<Collider2D>());
         int maxTicks = Mathf.CeilToInt(Mathf.Abs(target - held.transform.position.x) / (player.aiMoveSpeed * dt)) + postSteps + 2;
         if (maxTicks > 10000) throw new InvalidOperationException("Prediction exceeds 10000-tick synchronous budget");
+        Physics2D.SyncTransforms();
+        if (Trace != null) Trace.Capture(score, false);
+        result.copy_ms = copyTimer.Elapsed.TotalMilliseconds;
+        var simulateTimer = Stopwatch.StartNew();
         for (int i = 0; i < maxTicks; i++)
         {
             if (!dropped)
@@ -291,11 +320,13 @@ public sealed class SuikaPhysicsSimulator : IDisposable
             else { post++; }
             Physics2D.SyncTransforms();
             if (!physics.Simulate(dt)) throw new InvalidOperationException("Local PhysicsScene2D.Simulate failed");
+            if (Trace != null) Trace.Capture(score, IsGameOver(knownNext.activeSelf ? knownNext : held));
             FlushRemoval();
             result.physics_steps++;
             result.game_over = IsGameOver(knownNext.activeSelf ? knownNext : held);
             if (result.game_over || (dropped && post >= postSteps)) break;
         }
+        result.simulation_ms = simulateTimer.Elapsed.TotalMilliseconds;
         result.post_drop_steps = post;
         result.fruits = ReadBoard(); result.score = score; result.reward = score - startScore;
         result.merges = merges;
@@ -305,8 +336,10 @@ public sealed class SuikaPhysicsSimulator : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        var timer = Stopwatch.StartNew();
         foreach (var obj in owned) if (obj != null) obj.SetActive(false);
         foreach (var material in materials) if (material != null) Object.Destroy(material);
         if (scene.IsValid()) SceneManager.UnloadSceneAsync(scene);
+        cleanupMs = timer.Elapsed.TotalMilliseconds;
     }
 }

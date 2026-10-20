@@ -90,3 +90,71 @@
 - Computer UseスキルでUnity 2022.3.21f1の既存Editorを操作、Play/実通信比較/終了後reset成功、Console例外0（既存CS0414警告のみ）。予測Sceneが残らないことをHierarchyで確認。最後にPlay停止。実機game_over到達、スイカ消滅、全種類/全接触/複数tickフレーム/長時間の網羅は未検証。
 - Scene/Prefab/物理設定/得点/出現確率は変更なし。既存未コミット差分は保持。STEP 4は精度未達で未完了。次は接触履歴を保持するためのエピソード初期状態からの決定的リプレイ等を検討し、フレーム単位の合体削除/終了判定を記録して比較する。正確な任意盤面スナップショット復元を達成したとは主張しない。STEP 5は開始しない。
 - 今回のソース変更一覧：追加 SuikaGameUnity/Assets/Scenes/Script/SuikaPhysicsSimulator.cs と.meta、SuikaGameAi/SuikaAi/check_unity_prediction.py、tests/test_prediction_comparison.py、prediction_comparison.json。更新 Unity側 FruitEvolution.cs、Danse.cs、GameManager.cs、UDPStateProtocol.cs、UDPStepProtocol.cs、Tools/Test-UdpLifecycle.ps1。資料 DEVELOPMENT_PLAN.md、DEVELOPMENT_LOG.md、UDP_PROTOCOL.md。PlayerController.cs/ScoreManager.cs/UDPCommunicatorUnity.cs/Python unity_env.pyの既存差分には今回は変更を加えていない。Editorがcsproj/ログ/レイアウト等を通常更新する点は別。
+
+## 2026-10-20 STEP 4：接触誤差の更新単位での調査
+
+- C:\SuikaGameAIのdevelop、開始時clean。コミット/Pushなし。Scene/Prefab/物理設定/ゲームルールは変更なし。
+- 任意指定のPredictionDiagnosticsを追加。Physics2DFixedUpdate直後に最大512tickを記録し、ID系譜・接触点/法線/normalImpulse・合体/生成/削除時点と数値差を比較。比較専用に最大150post-drop tickを指定可能、通常stepの25tickは維持。
+- 初回10ケースで接触中の最初の有意差をtick1（0.02秒）に特定。初期数値は一致、実側の継続接触がコピー側では新規接触になる。合体/Destroy以前に差が出る。
+- 自由落下→最初の床衝突でもtick74まで数値一致、tick75で分岐。接触点/法線19点は完全一致、normalImpulseの最大差12.15802。接触履歴欠落だけが原因と断定できず、solver拘束順/fixture作成順等は未確定。不確かな物理修正は行わない。
+- 同一盤面A/B10ケース：診断なし/ありの予測結果は全件一致、実ゲームとの最終厳密比較は4/10合格。種類/個数・スコア・総tick・非終了状態は10/10一致。最大最終位置差0.0829872、速度差0.963758。盤面条件が前回と異なるため改善率にはしない。
+- 合体用2ケース：2個目が両側tick59でtype2+2→3、6点加点・生成・削除要求が一致。次のtick採取前に実Destroy/予測無効化。終端/長時間/複数tickフレームの合体は未検証。
+- 同一盤面の平均予測時間：診断なし13.08263ms、あり16.61295ms（追加3.53032ms）。Scene生成.06353、コピー1.18375、計算/採取15.29616、解放予約.05874ms。非同期解放完了時間は未測定。
+- Python19テスト、C#回帰成功。Computer Useで新しいUnityプロジェクトのgameDisplayをPlay/比較/reset、Console例外0、最後に停止。詳細・各変更ファイルの関数/行番号/変更前後/抜粋はSTEP4_DIAGNOSTICS.md。結果はPython/prediction_trace_before.json、prediction_trace_paired.json、prediction_trace_merge.json。
+- STEP 4未完了、STEP 5未着手。次は最初の床衝突fixtureでScene種別・body/fixture登録順等を1要因ずつ切り分ける。エピソード全再生は未実装で、今回の初回衝突の差を解決する保証もない。
+
+
+## 2026-10-20 STEP 4-A：単体床衝突と方針判断
+
+- develop、開始前の未コミット変更を保持。コミット/Pushなし。本番Simulator/ルール/物理設定の変更なし。
+- Editor専用SingleCollisionProbeを追加。PredictionDiagnostics.Compareには明示actual Recorderのオーバーロードだけ追加。
+- ブドウ1個＋元bottom、同じfactoryで自動defaultと手動localを120tick比較：同順は全tickの物理値差0。登録/有効化順序だけ逆にすると初回床接触tick62で差。位置差0.00594811、角度差1.6353455度。最大位置差0.03617935。点+法線一致15/19、インパルスも差。独立Scene/手動Simulateそれ自体が必ず誤差を生む仮説は支持されない。
+- 本番の内部登録/拘束順や接触履歴が一意に特定されたわけではない。順序の推測修正はしない。新factory同士の最小実験であり、本番Copyの改善完了ではない。
+- 120tick物理＋詳細記録ループ5.2837ms/5.1749ms、Scene作成解放は除外。本番13.08msと直接比較不可。
+- Unityで短時間Play/実験/復帰/Stop、Consoleエラー0。Python19テスト成功0.319秒、UDPライフサイクル/step回帰成功。実験後は新しいPlayから通常操作を行う。
+- docs/STEP4_CODE_GUIDE.mdに実コード抜粋と行番号、主要関数・通信順序・用語を詳記。docs/STEP4_DIRECTION.mdに測定結果、A/B/C精度とregret、層別STEP4-B案を記載。
+- 推奨はB：完全一致の追求をいったん止め、STEP4-Bで合体/得点/終端と候補順位を評価。95%/80%等は仮目標。10試行で探索精度の達成判断はしない。STEP5未実装。
+
+
+## 2026-10-20 STEP 4-B：予測精度の収集・集計基盤
+
+- develop、既存未コミット変更を保持。コミット/Push、物理設定/ルール変更、STEP5実装なし。
+- 新規Python CLIと集計module、13テストを追加。compare_stepを再利用し、試行数/episode長/入力/horizon指定、JSONL逐次保存、JSON/CSV集計、設定/資産ハッシュ、再開/オフライン再集計に対応。
+- Unityは診断のfinal_actual/final_predictionと、Resultの可視NEXT型/終端高さの情報追加だけ。果物を親系譜aliasで対応し、不明な対応や更新/初期条件不一致を明示。終端の食い違いは除外に埋もれない別表へ残す。
+- 実通信：100更新（約2秒以上）7試行/2episode、25更新3試行/1episode。すべて比較条件一致。本物の合体正例3（0→1、1→2、3→4）が予測と一致。非0得点1/3/10点も一致。連鎖・密集・終端近傍・実終端の正例は0で未評価。候補順位の正解は取得していない。
+- 100更新の延べ16果物：位置平均.0137325/最大.113766、速度平均.0345394/最大.187123、角度最大16.9596度、角速度最大35.6236度/秒。診断なし平均10.8134ms、診断付き14.2156ms（非同期解放完了等は除外）。旧測定とは盤面/期間が違うため改善比較不可。
+- UnityでPlay/実通信/Consoleエラー0/Stopを確認。Python32テスト成功0.463秒、既存UDP回帰成功。JSONL追記/新episodeで再開/オフライン再集計を確認。
+- 少数・相関ありの測定なので95%目標達成とは判断しない。層別追加収集と公平な同盤面候補評価基盤が必要。docs/STEP4B_EVALUATION.mdに実コード/行番号/計算式/手順/判断条件を記載。
+
+
+## 2026-10-20 合体後の持続的めり込み：対策と短時間検証
+
+- develop上で作業。既存未コミット変更を保持。コミット/Pushなし。Scene/Prefab/物理設定・進化順・得点は変更なし。
+- 確認：FruitEvolutionは接触中の2個の中点に大型果物を生成し、元の果物はDestroy待ちだった。重なり除去は通常の物理演算任せ。隔離Sceneでは、起きているRigidbodyでも深い重なりが300tick（6秒）継続する配置を再現。スリープだけが原因ではない。複雑なPolygon内部の拘束等のエンジン内部原因は未特定。
+- FruitEvolution.RemoveFruitで消費済みColliderを直ちに無効化。新規MergeOverlapResolverを合体直後に実ゲーム/予測で共通実行。元のPolygon距離から深い重なり（defaultContactOffsetの3倍超）を検出し、短い位置補正を最大32周行う。補正経路の途中も既存の壁/他果物への新しい重なり・既存重なりの悪化を検査し、不適切なら元の位置へ戻す。許容深さはdefaultContactOffset。速度/形状/重力/摩擦の書換えなし。
+- 限界：補正は位置の直接変更なので、合体時の軌道・接触・見え方は従来と変わり得る。密集して安全な逃げ先がなければ打切り、全ケースの解消保証はしない。ユーザー報告と同一の実盤面はまだ再現できていない。
+- Editor専用MergeOverlapProbeを追加（Play中 Tools > Suika > Run Merge Overlap Probe / Ctrl+Shift+F9）。元Prefab/本番合体処理/独立PhysicsScene2Dで5種類×3配置×300tick。20261020_124357_875（変更前）と125806_604（変更後）：6秒後最大深さ0.215273→0.004245 world units、全300tick深い重なりが続くケース1→0/15。最初から親に重なるストレス配置を含み、合体前に隣接果物が両親から離れている5配置では変更前も持続バグは出ていない。15件の一般的なバグ再現率と解釈しない。
+- 追加の直接補正試験：空き空間で深さ0.298425→0、壁で囲むと0.298425→0.150530（残存）。壁への深さは最大0.010000で許容値内。補正で必ず解消できるという主張はしない。隔離試験中、実スコア/乱数不変を確認。15配置+壁試験の合計680.65ms、予測1回の性能測定とは異なる。
+- Unityコンパイル/Play/隔離試験/Stop、Console例外0。Python32テストと既存UDPライフサイクル回帰成功（これらは新しいネイティブ物理補正自体の試験ではない）。実通信check_unity_prediction --merge-case --post-drop-steps 100：2回落下、合体1、実/予測とも加点3、reset成功。予測所要8.31/7.22ms。合体後位置差0.002001、厳密閾値0.001を超えるため比較全合格にはならない（既存の予測誤差がなくなったとは判断しない）。
+- 測定JSONはPython/merge_overlap_probe_*.json、実通信はPython/merge_fix_live_20261020.json。従来1,000試行の保存結果は未変更で旧挙動の評価。次は通常の密集盤面で問題が出ていた合体を確認し、必要ならその配置を追加回帰にする。STEP5未実装。
+
+
+## 2026-10-20 合体後の押し出しを力方式へ変更（ユーザー指定の試作）
+
+- ユーザーの「生成場所は変えずに、重なったら強く押し出す」「一度実装」に従い、前項の直接位置補正を撤去。生成位置は従来の中点、以後もtransform/body.positionを補正から書き換えない。消費済みColliderの即時無効化は維持。
+- MergeOverlapResolver.Resolveは合体後の押し出し時間を登録。TickはPolygonの深い重なり（接触オフセット3倍超）を検査し、中心から外向きへ質量比例のImpulseを毎物理更新加える。深さに応じ加速、押す方向の速度成分を上限管理（落下速度・衝突による全速度の絶対上限ではない）。静的/kinematic障害物に向かうCollider.Castを避け、代替方向を試す。壁の衝突解決はUnity物理に任せるため、壁への食い込みゼロの保証はない。
+- EvolutionManagerのEvolutionDatabase InspectorにMerge Push Acceleration=30（基準加速度 world units/s²）、Max Speed=5（押出方向 world units/s）、Duration=2（ゲーム秒）を追加。暫定値で公式挙動の再現値ではない。Duration=0で以後の合体の押し出し無効。重力・摩擦・質量・形状・進化順・得点は未変更。
+- FruitEvolution.FixedUpdateで実ゲームを更新。SuikaPhysicsSimulator.TickMergePushは手動Simulate直前に同処理を実行し、Copyは進行中のOverlapPushTimeRemainingも引き継ぐ。reset/破棄後のオブジェクトに対する常駐管理リストは作らない。予測の計算中に実ゲーム側へ力は加わらない。
+- MergeOverlapProbeを力方式へ更新：300tickの前にTickMergePushを明示実行。力を加えた瞬間に座標が直接変わらない、タイマーコピー、時間切れ、実スコア/RNG不変をネイティブUnityで確認。
+- 130928_210.json（保持する実装）：15配置中14で6秒後深さ0。ただし14件は未補正でも自然解消する配置であり、修正の成功数と解釈しない。従来からの持続再現（桃2個＋近傍チェリー、offset=.35、合体前から重なるストレス配置）は0.215273→0.21067とほぼ変わらず、全300tick重なり継続。力だけではこの持続バグは未解消。
+- 直接生成したパイナップル/チェリーの試験：開放空間では深さ0.298425→0、壁で囲むと→0.004718。ただし壁への一時的最大深さ0.042165で、試験の許容0.03を超えsafe=false。力/移動先検査だけでは物理的な壁接触中の最大食い込みを保証できない。15配置＋壁試験合計854.73ms。
+- 0.25秒後に斜め45度へ押す追加案も1回比較（131313_756.json）。持続深さ0.21068、壁最大0.048411で改善なし。追加案は撤去し、130928時点と同じ実装を残した。原因をエンジン内部の拘束と断定はしていない。強さの追加調整だけで解決する保証はない。
+- Unityコンパイル/Play/試験/Inspectorの3項目表示/Stop、例外0（既存CS0414警告あり）。Python32テスト0.442秒、UDP回帰成功。実通信merge_push_live_20261020.json：2落下、合体1、実/予測とも10点、reset成功、両試行で既存比較閾値内。位置最大差1.19e-7、予測8.37/7.51ms。ただし周囲の押し出しを伴う密集盤面の実/予測一致は未検証。
+- 変更はMergeOverlapResolver.cs、FruitEvolution.cs、EvolutionDatabase.cs、SuikaPhysicsSimulator.cs、Editor/MergeOverlapProbe.cs、当ログ。developを維持しコミット/Pushなし、Scene/Prefab/ProjectSettingsの意図的変更なし。生成位置保持・力方式の試作完了だが、持続バグの完全修正として扱わない。
+
+
+## 2026-10-20 押し出し試作の撤回・復旧チェックポイント
+
+- ユーザーから実プレイで不自然な挙動の報告。直接位置補正/Impulse押出しの両方式を撤回し、合体前の通常の中点生成・Destroy処理へ復旧。Inspectorの押出し項目・FixedUpdateフック・予測の押出しタイマーも撤去。
+- 復旧対象は今回の実験分のみ。既存STEP4-A/Bの未コミットの評価・診断コードとテスト/資料は保持。ユーザー指示により復旧したソース構成をdevelopへコミット/Pushする。評価結果の大量データはローカルに残し、Push対象に含めない。
+- 別案は復旧チェックポイントの後に検証。強制的な押出しを再導入しない。

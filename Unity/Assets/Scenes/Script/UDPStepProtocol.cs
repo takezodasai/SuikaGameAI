@@ -30,6 +30,7 @@ public partial class UDPCommunicatorUnity
     {
         activeStep = null;
         pendingPrediction = null;
+        PredictionDiagnostics.Stop();
         completedStep = null;
         lastActionId = 0;
         if (playerController != null) playerController.StepControlLocked = false;
@@ -62,12 +63,28 @@ public partial class UDPCommunicatorUnity
         if (gameManager.isGameOver) { StepError(message, "game_over"); return; }
         if (Time.timeScale <= 0) { StepError(message, "physics_paused"); return; }
 
+        int comparisonTicks = message.command == "compare_step" ? message.comparison_post_drop_steps : 0;
+        if (comparisonTicks < 0 || comparisonTicks > 150) { StepError(message, "invalid_comparison_horizon"); return; }
         pendingPrediction = null;
         actualTotalPhysicsSteps = 0;
         if (message.command == "compare_step")
         {
-            try { pendingPrediction = SuikaPhysicsSimulator.Predict(playerController, gameManager, message.x); }
-            catch (Exception e) { StepError(message, "prediction_rejected:" + e.Message); return; }
+            try
+            {
+                // Paired A/B uses the SAME live board; prediction never advances it.
+                var reference = message.trace_physics
+                    ? SuikaPhysicsSimulator.Predict(playerController, gameManager, message.x, comparisonTicks == 0 ? -1 : comparisonTicks) : null;
+                if (message.trace_physics) PredictionDiagnostics.Begin(playerController, gameManager);
+                pendingPrediction = SuikaPhysicsSimulator.Predict(playerController, gameManager, message.x, comparisonTicks == 0 ? -1 : comparisonTicks);
+                if (reference != null)
+                {
+                    pendingPrediction.reference_elapsed_ms = reference.elapsed_ms;
+                    pendingPrediction.reference_fruits = reference.fruits;
+                    pendingPrediction.reference_score = reference.score;
+                    pendingPrediction.reference_game_over = reference.game_over;
+                }
+            }
+            catch (Exception e) { PredictionDiagnostics.Stop(); StepError(message, "prediction_rejected:" + e.Message); return; }
         }
         playerController.StepControlLocked = true;
         // Reserve before any mutation: even an unexpected DropFruit exception must not
@@ -85,7 +102,7 @@ public partial class UDPCommunicatorUnity
             return;
         }
         physicsTicks = 0;
-        targetTicks = Mathf.Max(1, Mathf.CeilToInt(StepSimulationSeconds / Time.fixedDeltaTime));
+        targetTicks = comparisonTicks > 0 ? comparisonTicks : Mathf.Max(1, Mathf.CeilToInt(StepSimulationSeconds / Time.fixedDeltaTime));
         activeStep = new StepResult {
             action_id = message.action_id, requested_x = message.x,
             min_x = movementRange.min_x, max_x = movementRange.max_x,
@@ -150,6 +167,9 @@ public partial class UDPCommunicatorUnity
     {
         activeStep.reward = ScoreManager.Instance.GetScore() - stepScoreBefore;
         activeStep.physics_steps = physicsTicks;
+        if (pendingPrediction != null && pendingPrediction.trace != null)
+            pendingPrediction.diagnostics = PredictionDiagnostics.Compare(pendingPrediction.trace);
+        PredictionDiagnostics.Stop();
         completedStep = new Observation { step_result = activeStep, prediction = pendingPrediction,
             actual_total_physics_steps = actualTotalPhysicsSteps };
         pendingPrediction = null;
