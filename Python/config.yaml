@@ -1,0 +1,15 @@
+Unity:
+  server_addr: "127.0.0.1"        # Python側のサーバーIP（Unityが送信先として使う）
+  server_port: 7773             # Python側の受信ポート（Unityが送信する先）
+  local_addr: "127.0.0.1"         # Unity側のローカルIP（通常は127.0.0.1）
+  local_port: 7889                # Unity側のリッスンポート（ここでは行動受信用）
+  action_interval: 0.01          # アクション送信間隔（秒）
+RLTrainer:
+  num_episodes: 2000               # 総エピソード数
+  max_steps: 2000                  # 1エピソード内の最大ステップ数
+  score_max: 10
+  score_min: 0
+Obs:
+  vector_dim: 16              # 観測ベクトルの次元数（例：プレイヤー位置、果物位置など）
+Action:
+  binary_dim: 6                 # 行動数（例：左右の動作。ここでは2つの離散行動）

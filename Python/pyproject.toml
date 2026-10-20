@@ -1,0 +1,23 @@
+[project]
+name = "suika-ai"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "takezodasai",email = "sekinetaizo@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml (>=6.0.2,<7.0.0)",
+    "numpy (>=2.2.3,<3.0.0)",
+    "torch (>=2.6.0,<3.0.0)",
+    "opencv-python (>=4.11.0.86,<5.0.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "suika_ai", from = "src"}]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

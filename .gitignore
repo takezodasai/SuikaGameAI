@@ -1,0 +1,68 @@
+# Unity generated data (keep Assets, Packages, ProjectSettings and their .meta)
+/Unity/[Ll]ibrary/
+/Unity/[Tt]emp/
+/Unity/[Oo]bj/
+/Unity/[Ll]ogs/
+/Unity/[Uu]ser[Ss]ettings/
+/Unity/[Bb]uild/
+/Unity/[Bb]uilds/
+/Unity/[Mm]emoryCaptures/
+/Unity/[Rr]ecordings/
+/Unity/.utmp/
+/Unity/UpgradeLog*.htm
+/Unity/*.csproj
+/Unity/*.sln
+/Unity/*.unityproj
+/Unity/ExportedObj/
+# Local IDE and OS files
+.vs/
+.idea/
+.vscode/
+.gradle/
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+/Python/build/
+/Python/dist/
+.coverage
+htmlcov/
+# Temporary files and local secrets
+*.log
+*.tmp
+*.bak
+*.swp
+~$*
+.env
+.env.*
+!.env.example
+# Training outputs; source and dependency lock files remain tracked
+/Python/checkpoints/
+/Python/models/
+/Python/runs/
+/Python/outputs/
+/Python/recordings/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.hdf5
+# Never import nested repository metadata
+**/.git/
