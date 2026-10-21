@@ -218,6 +218,32 @@ def _group(rows):
                           for k in ("elapsed_ms","reference_elapsed_ms","scene_create_ms","copy_ms","simulation_ms","cleanup_schedule_ms")}}
 
 
+def reward_accounting_summary(records):
+    """Use one latest cumulative ledger per episode, never sum repeated snapshots."""
+    latest = {}
+    for record in records:
+        state = record.get("state", {})
+        for key in ("reward_accounting", "previous_episode_reward_accounting"):
+            ledger = state.get(key)
+            if not ledger or not ledger.get("present", True) or not ledger.get("conserved"):
+                continue
+            episode = ledger["episode_id"]
+            old = latest.get(episode)
+            if old is None or ledger["open_interval"]["game_time_end"] >= old["open_interval"]["game_time_end"]:
+                latest[episode] = ledger
+    if not latest:
+        return {"available": False, "episodes": 0, "note": "Legacy recordings have no interval ledger"}
+    ledgers = list(latest.values())
+    result = {"available": True, "episodes": len(ledgers), "episode_snapshots": ledgers}
+    for key in ("episode_start_score", "episode_score", "step_reward_total", "between_steps_reward_total"):
+        result[key] = sum(ledger[key] for ledger in ledgers)
+    result["open_step_reward"] = sum(l["open_interval"]["reward"] for l in ledgers if l["open_interval"]["phase"] == "in_step")
+    result["open_between_steps_reward"] = sum(l["open_interval"]["reward"] for l in ledgers if l["open_interval"]["phase"] == "between_steps")
+    result["conserved"] = (result["episode_score"] == result["episode_start_score"] + result["step_reward_total"]
+                           + result["between_steps_reward_total"] + result["open_step_reward"] + result["open_between_steps_reward"])
+    return result
+
+
 def summarize(records):
     rows = [dict(r["metrics"],episode_id=r["episode_id"]) for r in records
             if r.get("status")=="completed" and r["metrics"]["eligible"]]
@@ -227,6 +253,7 @@ def summarize(records):
             "exclusion_counts":dict(Counter(reason for r in invalid for reason in
                 (r.get("metrics",{}).get("ineligible_reasons") or [r.get("status","unknown")]))),
             "all":_group(rows),
+            "reward_accounting_all_completed":reward_accounting_summary(records),
             "game_over_all_completed_screening": {**_group([dict(r["metrics"],episode_id=r["episode_id"]) for r in records if r.get("status")=="completed"])["game_over"],
                 "note":"Includes timing-mismatched trials so terminal disagreements cannot be hidden by exclusion; inspect raw records before treating as same-horizon accuracy"},
             "terminal_disagreements_for_review": [{"index":r["index"],"episode_id":r["episode_id"],"exclusions":r["metrics"]["ineligible_reasons"],"game_over":r["metrics"]["game_over"]}

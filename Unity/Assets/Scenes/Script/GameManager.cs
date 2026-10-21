@@ -42,11 +42,12 @@ public class GameManager : MonoBehaviour
 
     void CheckGameOver()
     {
-        GameObject[] fruits = GameObject.FindGameObjectsWithTag("Fruit");
+        FruitEvolution[] fruits = FindObjectsOfType<FruitEvolution>();
 
-        foreach (GameObject fruit in fruits)
+        foreach (FruitEvolution fruit in fruits)
         {
-            if (fruit.transform.position.y > gameOverHeight)
+            if (fruit.Simulation == null && fruit.CompareTag("Fruit") &&
+                fruit.CanTriggerGameOver(gameOverHeight))
             {
                 
                 GameOver();
@@ -90,6 +91,7 @@ public class GameManager : MonoBehaviour
 
     public void ResetGame(string requestId)
     {
+        udpcomm.CaptureEpisodeRewardSummary(); // Preserve the old episode, including any open reward interval.
         StopAllCoroutines();
         // Deactivate before deferred Destroy, so no old physics objects enter the new state.
         foreach (FruitEvolution fruit in FindObjectsOfType<FruitEvolution>())

@@ -42,6 +42,53 @@ def parse_state(value: dict) -> dict:
     _fruit_type(held.get("type"), allow_missing=not held["present"])
     _number(held.get("x"))
     _fruit_type(value.get("next_fruit_type"))
+    accounting = value.get("reward_accounting")
+    if accounting is not None:
+        validate_reward_accounting(accounting)
+        if accounting["episode_score"] != value["score"] or accounting["episode_id"] != value["episode_id"]:
+            raise ValueError("Reward ledger does not describe this snapshot")
+    previous = value.get("previous_episode_reward_accounting")
+    if previous is not None:
+        if not isinstance(previous, dict):
+            raise ValueError("Invalid previous episode ledger")
+        if previous.get("present", True):
+            validate_reward_accounting(previous)
+    return value
+
+
+def validate_reward_accounting(value):
+    """Disjoint time intervals; the between-step amount is never added to step reward."""
+    if not isinstance(value, dict) or value.get("version") != 1 or value.get("conserved") is not True:
+        raise ValueError("Invalid reward accounting")
+    if not isinstance(value.get("episode_id"), str) or not value["episode_id"]:
+        raise ValueError("Reward episode missing")
+    for key in ("episode_start_score", "episode_score", "step_reward_total", "between_steps_reward_total"):
+        if type(value.get(key)) is not int:
+            raise ValueError("Invalid reward total")
+    for key in ("last_step", "last_between_steps", "open_interval"):
+        interval = value.get(key)
+        if interval is not None and not isinstance(interval, dict):
+            raise ValueError("Invalid reward interval")
+        if key != "open_interval" and (interval is None or interval.get("present", True) is False):
+            continue
+        if not isinstance(interval, dict) or interval.get("present", True) is not True or interval.get("phase") not in ("in_step", "between_steps"):
+            raise ValueError("Missing reward interval")
+        for field in ("score_before", "score_after", "reward", "action_id"):
+            if type(interval.get(field)) is not int:
+                raise ValueError("Invalid reward interval value")
+        if interval["reward"] != interval["score_after"] - interval["score_before"]:
+            raise ValueError("Reward interval double count or omission")
+        if (interval["phase"] == "between_steps") != (interval["action_id"] == 0):
+            raise ValueError("Reward attribution inconsistent")
+        for prefix in ("game_time", "fixed_time"):
+            start, end = interval.get(prefix+"_start"), interval.get(prefix+"_end")
+            _number(start); _number(end)
+            if end < start:
+                raise ValueError("Reversed reward interval")
+    expected = (value["episode_start_score"] + value["step_reward_total"]
+                + value["between_steps_reward_total"] + value["open_interval"]["reward"])
+    if expected != value["episode_score"] or value["open_interval"]["score_after"] != value["episode_score"]:
+        raise ValueError("Reward totals do not conserve episode score")
     return value
 
 
@@ -256,7 +303,7 @@ class UnityEnv:
                     raise RuntimeError("Inconsistent step reply; call reset()")
                 self._action_id = action_id
                 self._pending_step = None
-                return state, info["reward"], state["game_over"], info
+                return state, info["reward"], state["game_over"], dict(info, reward_accounting=state.get("reward_accounting"))
             raise TimeoutError("Step outcome unknown; call reset() before another step")
         finally:
             self._operation_lock.release()
@@ -275,7 +322,11 @@ class UnityEnv:
             raise RuntimeError("Unity movement speed/time scale must be positive")
         target = limits["min_x"] + x * (limits["max_x"] - limits["min_x"])
         distance = abs(target - state["current_fruit"]["x"])
-        return max(5.0, (distance / speed + 0.5 + 2 * state.get("fixed_delta_time", 0.02)) / scale + 3.0)
+        wait = state.get("drop_cooldown_remaining", 0.0)
+        _number(wait)
+        if wait < 0:
+            raise ValueError("drop_cooldown_remaining must be nonnegative")
+        return max(5.0, (max(distance / speed, wait) + 0.5 + 2 * state.get("fixed_delta_time", 0.02)) / scale + 3.0)
 
     def close(self):
         self.socket.close()

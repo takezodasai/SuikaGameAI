@@ -1,15 +1,20 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 public partial class PlayerController
 {
     public bool StepControlLocked { get; set; }
     [Header("AI Step Movement")]
-    [Tooltip("World units per game second. Default 2.5 matches speed=5 times keyboard input=0.5. Captured at step start.")]
+    [Tooltip("Automatically use Speed times the normal keyboard input coefficient. Applies to live AI and prediction.")]
+    public bool matchKeyboardMoveSpeed = true;
+    public const float NormalMoveInput = 0.5f;
+    public float EffectiveAIMoveSpeed { get { return matchKeyboardMoveSpeed ? Mathf.Abs(speed * NormalMoveInput) : aiMoveSpeed; } }
+    [Tooltip("World units/game second, used only when Match Keyboard Move Speed is disabled.")]
     [Min(0.01f)]
     public float aiMoveSpeed = 2.5f;
     // Must match the existing keyboard hand-follow/spawn offset; no new movement rule.
-    const float HandOffsetX = -0.7f;
+    float HandOffsetX { get { return heldFruitOffset.x; } }
 
     [Serializable]
     public class DropRange
@@ -22,17 +27,22 @@ public partial class PlayerController
 
     public DropRange GetDropRange()
     {
+        return GetDropRangeForFruit(currentFruit, FindObjectsOfType<Collider2D>());
+    }
+
+    // Prediction supplies its own held clone/walls; it must never swap live references.
+    public DropRange GetDropRangeForFruit(GameObject heldFruit, IEnumerable<Collider2D> walls)
+    {
         var range = new DropRange();
-        if (currentFruit == null) { range.error = "no_current_fruit"; return range; }
+        if (heldFruit == null) { range.error = "no_current_fruit"; return range; }
         Physics2D.SyncTransforms();
-        PolygonCollider2D fruit = currentFruit.GetComponent<PolygonCollider2D>();
+        Collider2D fruit = FruitColliderShape.Get(heldFruit);
         if (fruit == null || !fruit.enabled || !fruit.isTrigger)
         { range.error = "unsupported_held_collider"; return range; }
-        Bounds shape = fruit.bounds; // Includes actual polygon offset, scale and rotation.
-        float origin = currentFruit.transform.position.x;
-        float anchor = spawnPosition.x + HandOffsetX;
+        Bounds shape = fruit.bounds; // Includes actual Circle/Capsule/Polygon offset, scale and rotation.
+        float origin = heldFruit.transform.position.x;
         BoxCollider2D left = null, right = null;
-        foreach (Collider2D collider in FindObjectsOfType<Collider2D>())
+        foreach (Collider2D collider in walls)
         {
             if (!collider.enabled || !collider.CompareTag("Wall")) continue;
             Bounds bounds = collider.bounds;
@@ -41,16 +51,14 @@ public partial class PlayerController
             // Fail closed for layouts outside the inspected scene's two straight walls.
             if (box == null || box.isTrigger || Mathf.Abs(box.transform.right.y) > 0.00001f)
             { range.error = "unsupported_wall_geometry"; return range; }
-            if (bounds.center.x < anchor)
+            if (left == null) left = box;
+            else if (right == null)
             {
-                if (left != null) { range.error = "ambiguous_left_wall"; return range; }
-                left = box;
-            }
-            else
-            {
-                if (right != null) { range.error = "ambiguous_right_wall"; return range; }
                 right = box;
+                if (left.bounds.center.x > right.bounds.center.x)
+                { BoxCollider2D swap = left; left = right; right = swap; }
             }
+            else { range.error = "ambiguous_side_walls"; return range; }
         }
         if (left == null || right == null)
         { range.error = "missing_side_walls"; return range; }
@@ -61,10 +69,8 @@ public partial class PlayerController
         range.right_wall_inner = right.bounds.min.x;
         range.fruit_left_extent = origin - shape.min.x;
         range.fruit_right_extent = shape.max.x - origin;
-        range.min_x = Mathf.Max(range.left_wall_inner + range.fruit_left_extent + range.clearance,
-            eftWarpThreshold + HandOffsetX + range.clearance);
-        range.max_x = Mathf.Min(range.right_wall_inner - range.fruit_right_extent - range.clearance,
-            rightWarpThreshold + HandOffsetX - range.clearance);
+        range.min_x = range.left_wall_inner + range.fruit_left_extent + range.clearance;
+        range.max_x = range.right_wall_inner - range.fruit_right_extent - range.clearance;
         // Include Player collisions too if a scene enables its collider (disabled in gameDisplay).
         foreach (Collider2D collider in GetComponents<Collider2D>())
         {
@@ -89,6 +95,7 @@ public partial class PlayerController
         if (float.IsNaN(normalizedX) || float.IsInfinity(normalizedX) || normalizedX < 0 || normalizedX > 1)
         { error = "x_out_of_range"; return false; }
         if (!range.valid) return false;
+        if (!CanDropFruit) { error = "drop_cooldown"; return false; }
         float target = Mathf.Lerp(range.min_x, range.max_x, normalizedX);
         if (!TryMoveHeldTo(target, range, out error)) return false;
         GameObject dropped = currentFruit;
@@ -119,7 +126,7 @@ public partial class PlayerController
         position.x = target;
         currentFruit.transform.position = position;
         Physics2D.SyncTransforms();
-        PolygonCollider2D shape = currentFruit.GetComponent<PolygonCollider2D>();
+        Collider2D shape = FruitColliderShape.Get(currentFruit);
         bool safe = shape.bounds.min.x >= range.left_wall_inner &&
                     shape.bounds.max.x <= range.right_wall_inner;
         error = "wall_bounds_overlap";
@@ -144,17 +151,21 @@ public partial class PlayerController
         return true;
     }
 
+    public bool EnsureHeldWithinRange(out string error)
+    {
+        DropRange range = GetDropRange();
+        error = range.error;
+        if (!range.valid) return false;
+        float target = Mathf.Clamp(currentFruit.transform.position.x, range.min_x, range.max_x);
+        float input = moveDirection;
+        bool safe = TryMoveHeldTo(target, range, out error);
+        if (safe) moveDirection = input;
+        return safe;
+    }
+
     public void InitializeStepPreview()
     {
-        // A larger NEXT spawned at the old small fruit's edge can start inside a wall.
-        // Initialize the NEW object safely before its first rendered frame, never snap
-        // an already moving fruit. Keyboard spawning remains unchanged.
-        DropRange range = GetDropRange();
-        if (!range.valid) return;
-        float x = currentFruit.transform.position.x;
-        float safeX = Mathf.Clamp(x, range.min_x, range.max_x);
-        string error;
-        if (!TryMoveHeldTo(safeX, range, out error))
-            Debug.LogError("Cannot initialize step preview safely: " + error);
+        if (!EnsureHeldWithinRange(out string error))
+            Debug.LogError("Cannot initialize held fruit safely: " + error);
     }
 }

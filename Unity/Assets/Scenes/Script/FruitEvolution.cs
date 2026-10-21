@@ -13,6 +13,21 @@ public class FruitEvolution : MonoBehaviour
     // Runtime-only observation role. Never infer a fruit's role from its name/tag.
     public bool IsPreview { get; set; }
     public bool IsMerging { get { return isMerging; } }
+    // Runtime episode state: only a physical collision after release arms game over.
+    public bool HasCollided { get; private set; }
+
+    // Instantiate does not copy runtime-only properties. Pending merges are rejected by Predict.
+    internal void CopyPredictionStateFrom(FruitEvolution source)
+    {
+        IsPreview = source.IsPreview;
+        HasCollided = source.HasCollided;
+    }
+
+    public bool CanTriggerGameOver(float height)
+    {
+        return gameObject.activeInHierarchy && !IsPreview && !isMerging &&
+            HasCollided && transform.position.y > height;
+    }
     private static long nextObservationId;
     private long observationId;
     public long ObservationId
@@ -36,6 +51,8 @@ public class FruitEvolution : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        if (IsPreview) return; // Held/NEXT trigger contacts must never arm this fruit.
+        HasCollided = true;
         PredictionDiagnostics.Collision(this, collision);
         if (isMerging) return;
 
@@ -83,10 +100,9 @@ public class FruitEvolution : MonoBehaviour
                     if (rb == null) rb = evolvedFruit.AddComponent<Rigidbody2D>();
                     rb.gravityScale = 1;
 
-                    PolygonCollider2D polyCollider = evolvedFruit.GetComponent<PolygonCollider2D>();
-                    if (polyCollider == null) polyCollider = evolvedFruit.AddComponent<PolygonCollider2D>();
-                    polyCollider.enabled = true;
-                    polyCollider.isTrigger = false;
+                    Collider2D shape = FruitColliderShape.Get(evolvedFruit);
+                    if (shape != null) shape.isTrigger = false;
+                    else Debug.LogError("Evolved fruit has no enabled Collider2D: " + evolvedFruit.name);
 
                     // 新たな果物に進化情報を設定
                     FruitEvolution fe = evolvedFruit.GetComponent<FruitEvolution>();
@@ -94,6 +110,9 @@ public class FruitEvolution : MonoBehaviour
                     {
                         fe.fruitType = nextType;
                         fe.mergeSound = mergeSound;
+                        // The new fruit was produced by a physical contact; do not
+                        // reset game-over eligibility until its next collision.
+                        fe.HasCollided = true;
                     }
                     else
                     {

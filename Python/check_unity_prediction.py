@@ -39,7 +39,7 @@ def compare(prediction, state):
                            math.hypot(a['vx']-p['vx'], a['vy']-p['vy']),
                            abs((a['angle']-p['angle']+180) % 360-180),
                            abs(a['angular_velocity']-p['angular_velocity'])))
-    return dict(types_match=types_match, count=len(actual),
+    result = dict(types_match=types_match, count=len(actual),
                 score_match=prediction['score']==state['score'],
                 game_over_match=prediction['game_over']==state['game_over'],
                 ticks_match=prediction['physics_steps']==state['actual_total_physics_steps'],
@@ -47,11 +47,25 @@ def compare(prediction, state):
                 max_velocity_error=max((e[1] for e in errors), default=0 if types_match else None),
                 max_angle_error=max((e[2] for e in errors), default=0 if types_match else None),
                 max_angular_velocity_error=max((e[3] for e in errors), default=0 if types_match else None))
+    if 'current_fruit' in prediction:
+        expected, observed = prediction['current_fruit'], state.get('current_fruit', {})
+        result['preview_type_match'] = (expected['present'] == observed.get('present')
+                                        and expected['type'] == observed.get('type'))
+        result['preview_x_error'] = abs(expected['x'] - observed.get('x', math.inf))
+        pr, ar = prediction['drop_range'], state.get('drop_range', {})
+        result['preview_range_match'] = pr['valid'] == ar.get('valid')
+        if pr['valid']:
+            result['preview_range_match'] &= all(
+                abs(pr[key] - ar.get(key, math.inf)) <= 1e-5 for key in ('min_x', 'max_x'))
+    return result
+
 
 
 def meets_tolerance(row):
     # Diagnostic acceptance criteria, not a claim of an official gameplay tolerance.
     return (all(row[k] for k in ('types_match', 'score_match', 'game_over_match', 'ticks_match'))
+            and row.get('preview_type_match', True) and row.get('preview_range_match', True)
+            and row.get('preview_x_error', 0) <= 1e-5
             and row['max_position_error'] <= 1e-3 and row['max_velocity_error'] <= 1e-2
             and row['max_angle_error'] <= 0.5 and row['max_angular_velocity_error'] <= 1.0)
 

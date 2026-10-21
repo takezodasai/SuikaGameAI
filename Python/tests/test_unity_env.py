@@ -17,6 +17,16 @@ def state(sequence=1, episode="episode1", request="", fruits=None):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_timeout_includes_cooldown_and_time_scale(self):
+        initial = state()
+        initial.update(drop_range=dict(valid=True, min_x=0, max_x=1),
+                       ai_move_speed=2.5, time_scale=0.1,
+                       drop_cooldown_remaining=0.4)
+        self.assertAlmostEqual(UnityEnv._movement_timeout(initial, 0.5), 12.4)
+        initial['drop_cooldown_remaining'] = -1
+        with self.assertRaises(ValueError):
+            UnityEnv._movement_timeout(initial, 0.5)
+
     def test_variable_fruit_count_and_physics(self):
         fruit = dict(id=42, type=6, x=-1.5, y=2, vx=0.2, vy=-1,
                      angle=120, angular_velocity=-30)

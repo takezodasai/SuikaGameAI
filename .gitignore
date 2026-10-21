@@ -66,3 +66,13 @@ htmlcov/
 *.hdf5
 # Never import nested repository metadata
 **/.git/
+
+# Local physics evaluation outputs (keep scripts/tests/docs, preserve raw files locally)
+/Python/eval_*/
+/Python/evaluation_*/
+/Python/*_probe*.json
+/Python/prediction_trace*.json
+/Python/simulation_*.json
+/Python/*_live_*.json
+/Python/cooldown_prediction_*.json
+/Python/step4_improved_smoke*.json

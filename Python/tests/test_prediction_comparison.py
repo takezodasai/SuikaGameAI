@@ -27,4 +27,21 @@ class PredictionComparisonTests(unittest.TestCase):
   d=dict(first_numeric_tick=-1,first_tolerance_tick=-1,actual_ticks=4,predicted_ticks=3,truncated=True,errors=[])
   summary=summarize_trace(d)
   self.assertFalse(summary['ticks_match']);self.assertTrue(summary['truncated'])
+ def test_wrong_next_controlled_fruit_is_rejected(self):
+  prediction=dict(fruits=[],score=0,game_over=False,physics_steps=26,
+   current_fruit=dict(present=True,type=2,x=1.0),drop_range=dict(valid=True,min_x=-2,max_x=2))
+  state=dict(fruits=[],score=0,game_over=False,actual_total_physics_steps=26,
+   current_fruit=dict(present=True,type=1,x=1.0),drop_range=dict(valid=True,min_x=-2,max_x=2))
+  row=compare(prediction,state)
+  self.assertFalse(row['preview_type_match']);self.assertFalse(meets_tolerance(row))
+ def test_next_preview_position_and_range_are_checked(self):
+  prediction=dict(fruits=[],score=0,game_over=False,physics_steps=26,
+   current_fruit=dict(present=True,type=2,x=1.0),drop_range=dict(valid=True,min_x=-2,max_x=2))
+  state=dict(fruits=[],score=0,game_over=False,actual_total_physics_steps=26,
+   current_fruit=dict(present=True,type=2,x=1.0),drop_range=dict(valid=True,min_x=-2,max_x=2))
+  self.assertTrue(meets_tolerance(compare(prediction,state)))
+  state['current_fruit']['x']=1.1
+  self.assertFalse(meets_tolerance(compare(prediction,state)))
+  state['current_fruit']['x']=1.0;state['drop_range']['max_x']=1.8
+  self.assertFalse(meets_tolerance(compare(prediction,state)))
 if __name__=='__main__': unittest.main()

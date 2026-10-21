@@ -94,13 +94,14 @@ public partial class UDPCommunicatorUnity
         completedStep = null;
         stepScoreBefore = ScoreManager.Instance.GetScore();
         movementRange = playerController.GetDropRange();
-        float speed = playerController.aiMoveSpeed;
+        float speed = playerController.EffectiveAIMoveSpeed;
         if (!movementRange.valid || float.IsNaN(speed) || float.IsInfinity(speed) || speed <= 0)
         {
             playerController.StepControlLocked = false;
             completedStep = StepError(message, movementRange.valid ? "invalid_movement_speed" : movementRange.error);
             return;
         }
+        BeginRewardStep(message.action_id, stepScoreBefore);
         physicsTicks = 0;
         targetTicks = comparisonTicks > 0 ? comparisonTicks : Mathf.Max(1, Mathf.CeilToInt(StepSimulationSeconds / Time.fixedDeltaTime));
         activeStep = new StepResult {
@@ -140,6 +141,7 @@ public partial class UDPCommunicatorUnity
             activeStep.movement_seconds += Time.fixedDeltaTime;
         }
         if (nextX != activeStep.target_x) return;
+        if (!playerController.CanDropFruit) return; // Wait at the target; do not fail/repeat the reserved action.
         float applied;
         long fruitId;
         activeStep.status = "dropping"; // Reserve the internal attempt too, before DropFruit can throw.
@@ -168,8 +170,13 @@ public partial class UDPCommunicatorUnity
         activeStep.reward = ScoreManager.Instance.GetScore() - stepScoreBefore;
         activeStep.physics_steps = physicsTicks;
         if (pendingPrediction != null && pendingPrediction.trace != null)
+        {
             pendingPrediction.diagnostics = PredictionDiagnostics.Compare(pendingPrediction.trace);
+            pendingPrediction.diagnostics.actual_completion_game_over = gameManager.isGameOver;
+            pendingPrediction.diagnostics.predicted_completion_game_over = pendingPrediction.game_over;
+        }
         PredictionDiagnostics.Stop();
+        EndRewardStep(ScoreManager.Instance.GetScore());
         completedStep = new Observation { step_result = activeStep, prediction = pendingPrediction,
             actual_total_physics_steps = actualTotalPhysicsSteps };
         pendingPrediction = null;

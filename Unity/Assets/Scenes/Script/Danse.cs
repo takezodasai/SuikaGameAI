@@ -13,7 +13,7 @@ public class Danse : MonoBehaviour
     {
         // Rigidbody2DとCollider2Dの設定
         //rb = GetComponent<Rigidbody2D>();
-        coll = GetComponent<Collider2D>();
+        coll = FruitColliderShape.Get(gameObject);
 
         // 物理マテリアルを適用
         if (coll != null)

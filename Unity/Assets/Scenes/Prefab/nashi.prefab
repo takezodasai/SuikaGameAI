@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 596795850321328950}
   - component: {fileID: 4290257400235429182}
   - component: {fileID: 4087585937815277789}
+  - component: {fileID: 496262481756507742}
   m_Layer: 0
   m_Name: nashi
   m_TagString: Fruit
@@ -30,7 +31,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: -0.0022829575, y: -0.019790143, z: -0.11472438, w: 0.9931977}
   m_LocalPosition: {x: -0.78, y: -1.85, z: 0}
-  m_LocalScale: {x: 0.7628933, y: 0.7628933, z: 0.7628933}
+  m_LocalScale: {x: 0.940829397, y: 0.940829397, z: 0.940829397}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -109,7 +110,7 @@ PolygonCollider2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8707792352451675123}
-  m_Enabled: 1
+  m_Enabled: 0
   m_Density: 1
   m_Material: {fileID: 0}
   m_IncludeLayers:
@@ -146,47 +147,14 @@ PolygonCollider2D:
   m_AutoTiling: 0
   m_Points:
     m_Paths:
-    - - {x: 0.72505295, y: -0.5397464}
-      - {x: 0.8099902, y: -0.37020025}
-      - {x: 0.8565114, y: -0.21139894}
-      - {x: 0.86848164, y: -0.11219754}
-      - {x: 0.854888, y: 0.1417851}
-      - {x: 0.8050232, y: 0.32289314}
-      - {x: 0.73567975, y: 0.44803283}
-      - {x: 0.68334365, y: 0.52967584}
-      - {x: 0.48704252, y: 0.7328329}
-      - {x: 0.31983835, y: 0.8239507}
-      - {x: 0.16006601, y: 0.88618696}
-      - {x: -0.04980521, y: 0.9152212}
-      - {x: -0.119847395, y: 0.91568595}
-      - {x: -0.19250637, y: 0.91903216}
-      - {x: -0.23022644, y: 0.9209879}
-      - {x: -0.26897848, y: 0.907992}
-      - {x: -0.3540487, y: 0.89316034}
-      - {x: -0.441165, y: 0.8654871}
-      - {x: -0.6129083, y: 0.7805939}
-      - {x: -0.69377726, y: 0.71828794}
-      - {x: -0.7601715, y: 0.6689476}
-      - {x: -0.91524655, y: 0.486829}
-      - {x: -1.0001158, y: 0.32929248}
-      - {x: -1.0445306, y: 0.16668949}
-      - {x: -1.0625437, y: 0.0856652}
-      - {x: -1.0571009, y: -0.19464247}
-      - {x: -1.0223957, y: -0.3526632}
-      - {x: -0.95456904, y: -0.4979598}
-      - {x: -0.9224562, y: -0.5595147}
-      - {x: -0.75762224, y: -0.74867415}
-      - {x: -0.6962594, y: -0.80387396}
-      - {x: -0.45883954, y: -0.9354062}
-      - {x: -0.30620214, y: -0.984976}
-      - {x: -0.22139366, y: -0.9925484}
-      - {x: -0.06344272, y: -0.99449515}
-      - {x: 0.08509243, y: -0.9821856}
-      - {x: 0.26238686, y: -0.9346256}
-      - {x: 0.29822713, y: -0.92717755}
-      - {x: 0.3840668, y: -0.8803317}
-      - {x: 0.5586571, y: -0.7576399}
-      - {x: 0.6830721, y: -0.6050369}
+    - - {x: 0.86848164, y: 0.3513938}
+      - {x: 0.29888752, y: 0.9209879}
+      - {x: -0.5081312, y: 0.9209879}
+      - {x: -1.0625437, y: 0.3665754}
+      - {x: -1.0625437, y: -0.44375268}
+      - {x: -0.51180124, y: -0.99449515}
+      - {x: 0.32180184, y: -0.99449515}
+      - {x: 0.86848164, y: -0.44781536}
   m_UseDelaunayMesh: 0
 --- !u!114 &4087585937815277789
 MonoBehaviour:
@@ -203,3 +171,38 @@ MonoBehaviour:
   isHeld: 0
   rb: {fileID: 0}
   coll: {fileID: 0}
+--- !u!58 &496262481756507742
+CircleCollider2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8707792352451675123}
+  m_Enabled: 1
+  m_Density: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ForceSendLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ForceReceiveLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ContactCaptureLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_CallbackLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_IsTrigger: 1
+  m_UsedByEffector: 0
+  m_UsedByComposite: 0
+  m_Offset: {x: -0.090594456, y: -0.040054988}
+  serializedVersion: 2
+  m_Radius: 0.9718355

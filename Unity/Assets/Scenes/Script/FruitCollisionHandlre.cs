@@ -10,6 +10,7 @@ public class FruitCollisionHandler : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
+        if (playerController == null || playerController.currentFruit != gameObject) return;
         if (collision.CompareTag("Wall"))
         {
             if (collision.transform.position.x < 0)  // 左の壁
@@ -29,6 +30,7 @@ public class FruitCollisionHandler : MonoBehaviour
 
     private void OnTriggerExit2D(Collider2D collision)
     {
+        if (playerController == null || playerController.currentFruit != gameObject) return;
         if (collision.CompareTag("Wall"))
         {
             if (collision.transform.position.x < 0)  // 左の壁

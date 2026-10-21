@@ -17,7 +17,7 @@ namespace UnityEngine {
   public T GetComponent<T>() where T:new() { return new T(); }
  }
  public class FruitEvolution {
-  public bool IsPreview, IsMerging; public int fruitType; public long ObservationId;
+  public bool IsPreview, IsMerging, HasCollided; public int fruitType; public long ObservationId;
   public GameObject gameObject = new GameObject();
   public T GetComponent<T>() where T:new() { return new T(); }
  }
@@ -42,7 +42,7 @@ namespace UnityEngine {
  public static class Screen { public static int width=640,height=480; }
  public class WaitForSeconds { public WaitForSeconds(float s) {} }
  public class WaitForSecondsRealtime { public WaitForSecondsRealtime(float s) {} }
- public static class Time { public static float timeScale=1, fixedDeltaTime=0.02f; }
+ public static class Time { public static float timeScale=1, fixedDeltaTime=0.02f; public static double timeAsDouble, fixedTimeAsDouble; }
  public static class Mathf {
   public static int Max(int a,int b) { return System.Math.Max(a,b); }
   public static int CeilToInt(float x) { return (int)System.Math.Ceiling(x); }
@@ -62,16 +62,18 @@ namespace UnityEngine {
 }
 // Only the optional diagnostic entry point is stubbed; real physics is tested in Unity.
 public class SuikaPhysicsSimulator {
- public class Result { public object trace,diagnostics,fruits,reference_fruits; public double elapsed_ms,reference_elapsed_ms; public int score,reference_score; public bool game_over,reference_game_over; }
+ public class Result { public object trace,fruits,reference_fruits; public PredictionDiagnostics.Report diagnostics; public double elapsed_ms,reference_elapsed_ms; public int score,reference_score; public bool game_over,reference_game_over; }
  public static Result Predict(PlayerController p,GameManager g,float x,int ticks=-1) { return new Result(); }
 }
 public static class PredictionDiagnostics {
  public static void Begin(PlayerController p,GameManager g) {} public static void Stop() {}
- public static object Compare(object trace) { return null; }
+ public class Report { public bool actual_completion_game_over, predicted_completion_game_over; }
+ public static Report Compare(object trace) { return new Report(); }
 }
 public class PlayerController {
- public bool StepControlLocked;
- public float aiMoveSpeed=2.5f, moveDirection;
+ public bool StepControlLocked; public bool CanDropFruit=true;
+ public float EffectiveAIMoveSpeed { get { return aiMoveSpeed; } }
+ public float aiMoveSpeed=2.5f, moveDirection, dropCooldownSeconds=.4f, DropCooldownRemaining;
  public int DropCalls;
  public bool ThrowAfterDrop;
  public class DropRange { public bool valid=true; public string error=""; public float min_x=-2,max_x=2; }
@@ -89,7 +91,7 @@ public class PlayerController {
  public void MoveLeft1() {} public void MoveRight1() {}
 }
 public class GameManager { public bool isGameOver; public void ResetGame(string id) {} }
-public class ScoreManager { public static ScoreManager Instance = new ScoreManager(); public int GetScore() { return 0; } }
+public class ScoreManager { public static ScoreManager Instance = new ScoreManager(); public int score; public int GetScore() { return score; } }
 '@
 Add-Type -TypeDefinition ($source + "`n" + $stubs) -IgnoreWarnings -WarningAction SilentlyContinue
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
@@ -247,6 +249,22 @@ try {
     $command.command='compare_step'; $command.comparison_post_drop_steps=151
     $handler.Invoke($stepper, @($command)) | Out-Null
     Assert (-not $stepper.playerController.StepControlLocked) 'Invalid horizon locked player'
+    $stepper.BeginEpisode('cooldown-wait')
+    $command.episode_id=$stepper.GetType().GetField('episodeId', $flags).GetValue($stepper)
+    $command.command='step'; $command.action_id=1; $command.x=0.5
+    $stepper.playerController.currentFruit.transform.position=[UnityEngine.Vector3]::zero
+    $stepper.playerController.CanDropFruit=$false
+    $dropsBefore=$stepper.playerController.DropCalls
+    $handler.Invoke($stepper, @($command)) | Out-Null
+    for ($i=0; $i -lt 3; $i++) { Invoke-Private $stepper 'FixedUpdate' }
+    $handler.Invoke($stepper, @($command)) | Out-Null
+    Assert ($stepper.playerController.DropCalls -eq $dropsBefore) 'Cooldown wait or retry released fruit early'
+    $stepper.playerController.CanDropFruit=$true
+    Invoke-Private $stepper 'FixedUpdate'
+    $handler.Invoke($stepper, @($command)) | Out-Null
+    Invoke-Private $stepper 'FixedUpdate'
+    Assert ($stepper.playerController.DropCalls -eq ($dropsBefore+1)) 'Cooldown completion did not drop exactly once'
+    Write-Output 'PASS: AI waits through cooldown and drops once after release, including command retry'
     Write-Output 'PASS: diagnostic horizon, normal horizon unchanged, invalid horizon rejected'
     Write-Output 'PASS: step retries, busy rejection, completion window, coordinate rejection, stale/terminal commands'
 } finally {
@@ -256,3 +274,41 @@ try {
     $receiver.Close()
 }
 # スタブはUnityのコルーチンスケジューラー・Scene・JSON変換を検証しない。
+
+# Compile and exercise the REAL ledger code with deterministic score/time boundaries.
+$ledger=New-Object UDPCommunicatorUnity
+[ScoreManager]::Instance.score=0
+[UnityEngine.Time]::timeAsDouble=0
+[UnityEngine.Time]::fixedTimeAsDouble=0
+$ledger.BeginEpisode('ledger-test')
+$begin=$ledger.GetType().GetMethod('BeginRewardStep',$flags)
+$end=$ledger.GetType().GetMethod('EndRewardStep',$flags)
+$read=$ledger.GetType().GetMethod('ReadRewardAccounting',$flags)
+[ScoreManager]::Instance.score=7
+[UnityEngine.Time]::timeAsDouble=1
+$begin.Invoke($ledger,@([long]1,[int]7))|Out-Null
+[ScoreManager]::Instance.score=10
+[UnityEngine.Time]::timeAsDouble=2
+$end.Invoke($ledger,@([int]10))|Out-Null
+$one=$read.Invoke($ledger,@([int]10))
+Assert ($one.conserved -and $one.step_reward_total -eq 3 -and $one.between_steps_reward_total -eq 7) 'Gap or step score lost'
+$again=$read.Invoke($ledger,@([int]10))
+Assert ($again.step_reward_total -eq 3 -and $again.between_steps_reward_total -eq 7) 'Repeated observation double-counted rewards'
+[ScoreManager]::Instance.score=15
+[UnityEngine.Time]::timeAsDouble=3
+$open=$read.Invoke($ledger,@([int]15))
+Assert ($open.conserved -and $open.open_interval.phase -eq 'between_steps' -and $open.open_interval.reward -eq 5) 'Thinking-time score not visible'
+$begin.Invoke($ledger,@([long]2,[int]15))|Out-Null
+[ScoreManager]::Instance.score=18
+[UnityEngine.Time]::timeAsDouble=4
+$end.Invoke($ledger,@([int]18))|Out-Null
+$two=$read.Invoke($ledger,@([int]18))
+Assert ($two.conserved -and $two.step_reward_total -eq 6 -and $two.between_steps_reward_total -eq 12 -and $one.step_reward_total -eq 3) 'Intervals overlap or cached result mutated'
+$ledger.CaptureEpisodeRewardSummary()
+[ScoreManager]::Instance.score=0
+$ledger.BeginEpisode('ledger-reset')
+$reset=$read.Invoke($ledger,@([int]0))
+Assert ($reset.conserved -and $reset.step_reward_total -eq 0 -and $reset.between_steps_reward_total -eq 0) 'Reset leaked prior reward'
+$saved=$ledger.GetType().GetField('previousEpisodeRewards',$flags).GetValue($ledger)
+Assert ($saved.episode_score -eq 18 -and $saved.conserved) 'Reset lost previous episode summary'
+Write-Output 'PASS: disjoint step/gap rewards, thinking-time open interval, repeated reads, immutable completion, conservation and reset summary'

@@ -17,6 +17,7 @@ public partial class UDPCommunicatorUnity
         episodeId = Guid.NewGuid().ToString("N");
         resetRequestId = requestId;
         ClearStepForReset();
+        ResetRewardAccounting();
     }
 
     void HandleCommand(ActionMessage message)
@@ -68,6 +69,8 @@ public partial class UDPCommunicatorUnity
         observation.game_over = gameManager.isGameOver;
         observation.done = observation.game_over;
         observation.score = ScoreManager.Instance.GetScore();
+        observation.reward_accounting = ReadRewardAccounting(observation.score);
+        observation.previous_episode_reward_accounting = previousEpisodeRewards;
         GameObject held = playerController.currentFruit;
         observation.current_fruit = new ControlledFruit {
             present = held != null, type = GetFruitType(held),
@@ -75,9 +78,11 @@ public partial class UDPCommunicatorUnity
         };
         observation.next_fruit_type = GetFruitType(playerController.nextFruitObject);
         observation.drop_range = playerController.GetDropRange();
-        observation.ai_move_speed = playerController.aiMoveSpeed;
+        observation.ai_move_speed = playerController.EffectiveAIMoveSpeed;
         observation.fixed_delta_time = Time.fixedDeltaTime;
         observation.time_scale = Time.timeScale;
+        observation.drop_cooldown_seconds = playerController.dropCooldownSeconds;
+        observation.drop_cooldown_remaining = playerController.DropCooldownRemaining;
         observation.step_progress = activeStep;
         var fruits = new List<BoardFruit>();
         foreach (FruitEvolution fruit in FindObjectsOfType<FruitEvolution>())
@@ -91,7 +96,7 @@ public partial class UDPCommunicatorUnity
                 id = fruit.ObservationId, type = fruit.fruitType,
                 x = body.position.x, y = body.position.y,
                 vx = body.velocity.x, vy = body.velocity.y,
-                angle = body.rotation, angular_velocity = body.angularVelocity
+                angle = body.rotation, angular_velocity = body.angularVelocity, has_collided = fruit.HasCollided
             });
         }
         fruits.Sort((a, b) => a.id.CompareTo(b.id));
@@ -127,6 +132,7 @@ public partial class UDPCommunicatorUnity
     public class BoardFruit
     {
         public long id;
+        public bool has_collided;
         public int type;
         public float x, y, vx, vy, angle, angular_velocity;
     }
@@ -145,6 +151,7 @@ public partial class UDPCommunicatorUnity
     }
     public partial class Observation
     {
+        public RewardAccounting reward_accounting, previous_episode_reward_accounting;
         public int protocol_version;
         public string stream_id, episode_id, reset_request_id;
         public long state_id;
@@ -157,7 +164,7 @@ public partial class UDPCommunicatorUnity
         public SuikaPhysicsSimulator.Result prediction;
         public int actual_total_physics_steps;
         public StepResult step_progress;
-        public float ai_move_speed, fixed_delta_time, time_scale;
+        public float ai_move_speed, fixed_delta_time, time_scale, drop_cooldown_seconds, drop_cooldown_remaining;
     }
     [Serializable]
     class StateFragment
@@ -167,4 +174,81 @@ public partial class UDPCommunicatorUnity
         public long state_id;
         public int index, count;
     }
+
+    [Serializable] public class RewardInterval
+    {
+        public bool present; // JsonUtility serializes null classes as empty objects.
+        public string phase; // No causal attribution for between_steps (action_id=0).
+        public long action_id;
+        public int score_before, score_after, reward;
+        public double game_time_start, game_time_end, fixed_time_start, fixed_time_end;
+    }
+    [Serializable] public class RewardAccounting
+    {
+        public bool present;
+        public string episode_id;
+        public int version = 1, episode_start_score, episode_score, step_reward_total, between_steps_reward_total;
+        public bool conserved;
+        public RewardInterval last_step, last_between_steps, open_interval;
+    }
+    RewardAccounting previousEpisodeRewards;
+    public void CaptureEpisodeRewardSummary()
+    { if (!string.IsNullOrEmpty(episodeId)) previousEpisodeRewards = ReadRewardAccounting(ScoreManager.Instance.GetScore()); }
+
+    int rewardStartScore, rewardBoundaryScore, stepRewardTotal, betweenRewardTotal;
+    double rewardBoundaryTime, rewardBoundaryFixedTime;
+    long rewardActionId;
+    RewardInterval lastRewardStep, lastRewardGap;
+
+    void ResetRewardAccounting()
+    {
+        rewardStartScore = rewardBoundaryScore = ScoreManager.Instance.GetScore();
+        stepRewardTotal = betweenRewardTotal = 0;
+        rewardActionId = 0;
+        lastRewardStep = lastRewardGap = null;
+        rewardBoundaryTime = Time.timeAsDouble;
+        rewardBoundaryFixedTime = Time.fixedTimeAsDouble;
+    }
+    RewardInterval OpenRewardInterval(int score)
+    {
+        return new RewardInterval {
+            present = true, phase = rewardActionId == 0 ? "between_steps" : "in_step", action_id = rewardActionId,
+            score_before = rewardBoundaryScore, score_after = score, reward = score - rewardBoundaryScore,
+            game_time_start = rewardBoundaryTime, game_time_end = Time.timeAsDouble,
+            fixed_time_start = rewardBoundaryFixedTime, fixed_time_end = Time.fixedTimeAsDouble
+        };
+    }
+    void AdvanceRewardBoundary(int score)
+    {
+        rewardBoundaryScore = score;
+        rewardBoundaryTime = Time.timeAsDouble;
+        rewardBoundaryFixedTime = Time.fixedTimeAsDouble;
+    }
+    void BeginRewardStep(long actionId, int score)
+    {
+        if (rewardActionId != 0) throw new InvalidOperationException("Reward interval already active");
+        lastRewardGap = OpenRewardInterval(score);
+        betweenRewardTotal += lastRewardGap.reward;
+        AdvanceRewardBoundary(score);
+        rewardActionId = actionId;
+    }
+    void EndRewardStep(int score)
+    {
+        if (rewardActionId == 0) throw new InvalidOperationException("No active reward interval");
+        lastRewardStep = OpenRewardInterval(score);
+        stepRewardTotal += lastRewardStep.reward;
+        AdvanceRewardBoundary(score);
+        rewardActionId = 0;
+    }
+    RewardAccounting ReadRewardAccounting(int score)
+    {
+        var open = OpenRewardInterval(score);
+        return new RewardAccounting {
+            present = true, episode_id = episodeId, episode_start_score = rewardStartScore, episode_score = score,
+            step_reward_total = stepRewardTotal, between_steps_reward_total = betweenRewardTotal,
+            last_step = lastRewardStep, last_between_steps = lastRewardGap, open_interval = open,
+            conserved = score == rewardStartScore + stepRewardTotal + betweenRewardTotal + open.reward
+        };
+    }
+
 }

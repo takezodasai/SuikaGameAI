@@ -14,13 +14,15 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         public string status = "experimental", limitation;
         public bool validated_for_search = false;
         public int initial_contact_count;
+        public UDPCommunicatorUnity.ControlledFruit current_fruit;
+        public PlayerController.DropRange drop_range;
         public int initial_next_fruit_type;
         public float game_over_height;
         public UDPCommunicatorUnity.BoardFruit[] initial_fruits;
         public UDPCommunicatorUnity.BoardFruit[] fruits;
-        public int score, reward, physics_steps, movement_steps, post_drop_steps, merges;
+        public int score, reward, physics_steps, movement_steps, post_drop_steps, merges, cooldown_wait_steps;
         public bool game_over, drop_success, source_unchanged;
-        public float requested_x, applied_x, movement_seconds, fixed_delta_time;
+        public float requested_x, applied_x, movement_seconds, fixed_delta_time, drop_cooldown_seconds, initial_cooldown_remaining;
         public double elapsed_ms, scene_create_ms, copy_ms, simulation_ms, cleanup_schedule_ms;
         public PredictionDiagnostics.Report diagnostics;
         public double reference_elapsed_ms = -1;
@@ -56,7 +58,7 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         SceneManager.MoveGameObjectToScene(staging, scene);
     }
 
-    GameObject Copy(GameObject source, bool initializeMaterial)
+    GameObject Copy(GameObject source, bool freshPrefab)
     {
         // Validate BEFORE Instantiate: unknown Awake/OnEnable could have global side effects.
         foreach (var script in source.GetComponentsInChildren<MonoBehaviour>(true))
@@ -73,8 +75,12 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         foreach (Renderer renderer in clone.GetComponentsInChildren<Renderer>(true)) renderer.enabled = false;
         foreach (var script in clone.GetComponents<MonoBehaviour>()) script.enabled = false;
         var fruit = clone.GetComponent<FruitEvolution>();
-        if (fruit != null) { fruit.Simulation = this; fruit.enabled = true; }
-        if (initializeMaterial)
+        if (fruit != null)
+        {
+            fruit.Simulation = this; fruit.enabled = true;
+            if (!freshPrefab) fruit.CopyPredictionStateFrom(source.GetComponent<FruitEvolution>());
+        }
+        if (freshPrefab)
         {
             var danse = clone.GetComponent<Danse>();
             if (danse != null)
@@ -87,7 +93,7 @@ public sealed class SuikaPhysicsSimulator : IDisposable
             Trace.Watch(fruit, PredictionDiagnostics.Live.Alias(source.GetComponent<FruitEvolution>()));
         var originalBody = source.GetComponent<Rigidbody2D>();
         var body = clone.GetComponent<Rigidbody2D>();
-        if (body != null)
+        if (body != null && !freshPrefab)
         {
             body.position = originalBody.position;
             body.rotation = originalBody.rotation;
@@ -96,9 +102,12 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         }
         clone.transform.SetParent(null, true); // Already belongs to the local scene via staging.
         clone.SetActive(true);
+        // Prefab assets have no solved runtime inertia/COM (grape reports inertia=0).
+        // A new merged fruit must use native mass properties from the instantiated
+        // enabled shape, like the real Instantiate path, not overwrite them with zeros.
         // Enabling a previously inactive Rigidbody resets its runtime velocity.
         // Restore AFTER activation, not just after Instantiate/while under staging.
-        if (body != null)
+        if (body != null && !freshPrefab)
         {
             body.position = originalBody.position;
             body.rotation = originalBody.rotation;
@@ -122,7 +131,8 @@ public sealed class SuikaPhysicsSimulator : IDisposable
                 body.mass != originalBody.mass || body.inertia != originalBody.inertia ||
                 body.gravityScale != originalBody.gravityScale || body.drag != originalBody.drag ||
                 body.angularDrag != originalBody.angularDrag || body.constraints != originalBody.constraints ||
-                body.bodyType != originalBody.bodyType || body.collisionDetectionMode != originalBody.collisionDetectionMode)
+                body.bodyType != originalBody.bodyType || body.collisionDetectionMode != originalBody.collisionDetectionMode ||
+                body.simulated != originalBody.simulated)
                 throw new InvalidOperationException("Rigidbody clone state mismatch: " + source.name +
                     " mass=" + body.mass + "/" + originalBody.mass +
                     " inertia=" + body.inertia + "/" + originalBody.inertia +
@@ -159,9 +169,9 @@ public sealed class SuikaPhysicsSimulator : IDisposable
     bool IsGameOver(GameObject nextHeld)
     {
         foreach (var pair in ids)
-            if (pair.Key.gameObject.activeSelf && pair.Key.CompareTag("Fruit") &&
-                pair.Key.transform.position.y > gameOverHeight) return true;
-        return nextHeld != null && nextHeld.CompareTag("Fruit") && nextHeld.transform.position.y > gameOverHeight;
+            if (pair.Key.CompareTag("Fruit") && pair.Key.CanTriggerGameOver(gameOverHeight)) return true;
+        // Held/NEXT objects are previews, never game-over candidates.
+        return false;
     }
     UDPCommunicatorUnity.BoardFruit[] ReadBoard()
     {
@@ -174,7 +184,7 @@ public sealed class SuikaPhysicsSimulator : IDisposable
             if (body == null) throw new InvalidOperationException("Prediction board fruit has no body");
             result.Add(new UDPCommunicatorUnity.BoardFruit { id = pair.Value, type = fruit.fruitType,
                 x = body.position.x, y = body.position.y, vx = body.velocity.x, vy = body.velocity.y,
-                angle = body.rotation, angular_velocity = body.angularVelocity });
+                angle = body.rotation, angular_velocity = body.angularVelocity, has_collided = fruit.HasCollided });
         }
         result.Sort((a,b) => a.id.CompareTo(b.id));
         return result.ToArray();
@@ -188,7 +198,7 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         float dt = Time.fixedDeltaTime;
         if (postDropSteps == -1) postDropSteps = Mathf.CeilToInt(0.5f / dt);
         if (postDropSteps < 1 || postDropSteps > 5000 || dt <= 0 || Time.timeScale <= 0 ||
-            player.aiMoveSpeed <= 0 || float.IsNaN(player.aiMoveSpeed) || float.IsInfinity(player.aiMoveSpeed))
+            player.EffectiveAIMoveSpeed <= 0 || float.IsNaN(player.EffectiveAIMoveSpeed) || float.IsInfinity(player.EffectiveAIMoveSpeed))
             throw new InvalidOperationException("Invalid prediction horizon, speed or clock");
         var range = player.GetDropRange();
         if (!range.valid) throw new InvalidOperationException(range.error);
@@ -199,7 +209,7 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         Result result;
         var simulation = new SuikaPhysicsSimulator(manager);
         double createMs = timer.Elapsed.TotalMilliseconds;
-        simulation.Trace = PredictionDiagnostics.Live != null ? new PredictionDiagnostics.Recorder() : null;
+        simulation.Trace = PredictionDiagnostics.Live != null ? new PredictionDiagnostics.Recorder(manager.GameOverHeight) : null;
         try { result = simulation.Run(player, x, range, dt, postDropSteps); }
         finally { if(simulation.Trace!=null)simulation.Trace.recording=false; simulation.Dispose(); }
         result.scene_create_ms = createMs;
@@ -224,12 +234,15 @@ public sealed class SuikaPhysicsSimulator : IDisposable
                 p = fruit.transform.position, q = fruit.transform.rotation,
                 v = body != null ? body.velocity : Vector2.zero,
                 w = body != null ? body.angularVelocity : 0,
-                sleeping = body != null && body.IsSleeping(), merging = fruit.IsMerging }));
+                sleeping = body != null && body.IsSleeping(), merging = fruit.IsMerging,
+                preview = fruit.IsPreview, contacted = fruit.HasCollided, simulated = body != null && body.simulated,
+                gravity = body != null ? body.gravityScale : 0,
+                mass = body != null ? body.mass : 0, inertia = body != null ? body.inertia : 0 }));
         }
         values.Sort(StringComparer.Ordinal);
-        return string.Join("|", values) + player.transform.position.ToString("R");
+        return string.Join("|", values) + player.transform.position.ToString("R") + ":" + player.NextDropAllowedAt.ToString("R") + ":" + player.dropCooldownSeconds.ToString("R");
     }
-    [Serializable] class SourceBody { public Vector3 p; public Quaternion q; public Vector2 v; public float w; public bool sleeping, merging; }
+    [Serializable] class SourceBody { public Vector3 p; public Quaternion q; public Vector2 v; public float w; public bool sleeping, merging, preview, contacted, simulated; public float gravity, mass, inertia; }
 
     double cleanupMs;
 
@@ -237,6 +250,7 @@ public sealed class SuikaPhysicsSimulator : IDisposable
     {
         var copyTimer = Stopwatch.StartNew();
         var result = new Result { requested_x = x, score = score, fixed_delta_time = dt,
+            drop_cooldown_seconds = player.dropCooldownSeconds, initial_cooldown_remaining = player.DropCooldownRemaining,
             initial_next_fruit_type = player.nextFruitObject.GetComponent<FruitEvolution>().fruitType, game_over_height = gameOverHeight,
             limitation = "Cold contact cache; merges retired per tick; game-over checked per tick, live per rendered Update. Not bit-exact for arbitrary active contacts or multi-tick frames." };
         var liveFruits = Object.FindObjectsOfType<FruitEvolution>();
@@ -265,10 +279,12 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         var held = Copy(player.currentFruit, false);
         var heldEvolution = held.GetComponent<FruitEvolution>();
         heldEvolution.IsPreview = true;
+        PlayerController.PreparePreviewBody(held, false);
         // Only the visible NEXT is copied. No new random fruit is sampled.
         var knownNext = Copy(player.nextFruitObject, false);
         knownNext.GetComponent<FruitEvolution>().IsPreview = true;
-        var nextCollider = knownNext.GetComponent<PolygonCollider2D>();
+        PlayerController.PreparePreviewBody(knownNext, true);
+        var nextCollider = FruitColliderShape.Get(knownNext);
         nextCollider.isTrigger = true;
         knownNext.SetActive(false);
         float target = Mathf.Lerp(range.min_x, range.max_x, x);
@@ -277,7 +293,10 @@ public sealed class SuikaPhysicsSimulator : IDisposable
         var walls = new List<Collider2D>();
         foreach (var obj in owned)
             if (obj.CompareTag("Wall")) walls.AddRange(obj.GetComponents<Collider2D>());
-        int maxTicks = Mathf.CeilToInt(Mathf.Abs(target - held.transform.position.x) / (player.aiMoveSpeed * dt)) + postSteps + 2;
+        // The next live FixedUpdate observes fixedTime + dt, not the rendered Update clock.
+        double firstTickTime = Time.fixedTimeAsDouble + dt;
+        int waitBudget = (int)Math.Ceiling(Math.Max(0, player.NextDropAllowedAt - firstTickTime) / dt);
+        int maxTicks = Mathf.CeilToInt(Mathf.Abs(target - held.transform.position.x) / (player.EffectiveAIMoveSpeed * dt)) + waitBudget + postSteps + 2;
         if (maxTicks > 10000) throw new InvalidOperationException("Prediction exceeds 10000-tick synchronous budget");
         Physics2D.SyncTransforms();
         if (Trace != null) Trace.Capture(score, false);
@@ -289,10 +308,10 @@ public sealed class SuikaPhysicsSimulator : IDisposable
             {
                 float old = held.transform.position.x;
                 var p = held.transform.position;
-                p.x = Mathf.MoveTowards(old, target, player.aiMoveSpeed * dt);
+                p.x = Mathf.MoveTowards(old, target, player.EffectiveAIMoveSpeed * dt);
                 held.transform.position = p;
                 Physics2D.SyncTransforms();
-                var shape = held.GetComponent<PolygonCollider2D>();
+                var shape = FruitColliderShape.Get(held);
                 if (shape.bounds.min.x < range.left_wall_inner || shape.bounds.max.x > range.right_wall_inner)
                     throw new InvalidOperationException("Prediction movement outside wall bounds");
                 foreach (var wall in walls)
@@ -302,11 +321,13 @@ public sealed class SuikaPhysicsSimulator : IDisposable
                         throw new InvalidOperationException("Prediction movement overlaps wall");
                 }
                 if (old != p.x) { result.movement_steps++; result.movement_seconds += dt; }
-                if (p.x == target)
+                if (p.x == target && firstTickTime + i * (double)dt < player.NextDropAllowedAt)
+                    result.cooldown_wait_steps++; // Physical time advances even while waiting at the target.
+                if (p.x == target && firstTickTime + i * (double)dt >= player.NextDropAllowedAt)
                 {
                     var body = held.GetComponent<Rigidbody2D>();
                     if (body == null) body = held.AddComponent<Rigidbody2D>();
-                    body.gravityScale = 1;
+                    PlayerController.ReleaseFruitBody(body);
                     shape.isTrigger = false;
                     heldEvolution.IsPreview = false;
                     ids.Add(heldEvolution, generatedId--);
@@ -314,7 +335,18 @@ public sealed class SuikaPhysicsSimulator : IDisposable
                     result.drop_success = dropped = true;
                     knownNext.transform.position = held.transform.position;
                     knownNext.SetActive(true);
-                    // STEP 3.5's new-preview clamp affects no dynamic body (trigger-only).
+                    // NEXT is a frozen display body. The real SpawnFruit creates a
+                    // held (simulated, gravity-free) body and clamps a larger fruit.
+                    PlayerController.PreparePreviewBody(knownNext, false);
+                    Physics2D.SyncTransforms();
+                    var nextRange = player.GetDropRangeForFruit(knownNext, walls);
+                    if (nextRange.valid)
+                    {
+                        var nextPosition = knownNext.transform.position;
+                        nextPosition.x = Mathf.Clamp(nextPosition.x, nextRange.min_x, nextRange.max_x);
+                        knownNext.transform.position = nextPosition;
+                        Physics2D.SyncTransforms();
+                    }
                 }
             }
             else { post++; }
@@ -326,6 +358,13 @@ public sealed class SuikaPhysicsSimulator : IDisposable
             result.game_over = IsGameOver(knownNext.activeSelf ? knownNext : held);
             if (result.game_over || (dropped && post >= postSteps)) break;
         }
+        GameObject nextControl = dropped ? knownNext : held;
+        result.current_fruit = new UDPCommunicatorUnity.ControlledFruit {
+            present = nextControl != null && nextControl.activeSelf,
+            type = nextControl.GetComponent<FruitEvolution>().fruitType,
+            x = nextControl.transform.position.x
+        };
+        result.drop_range = player.GetDropRangeForFruit(nextControl, walls);
         result.simulation_ms = simulateTimer.Elapsed.TotalMilliseconds;
         result.post_drop_steps = post;
         result.fruits = ReadBoard(); result.score = score; result.reward = score - startScore;

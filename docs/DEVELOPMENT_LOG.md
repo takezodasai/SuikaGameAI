@@ -158,3 +158,124 @@
 - ユーザーから実プレイで不自然な挙動の報告。直接位置補正/Impulse押出しの両方式を撤回し、合体前の通常の中点生成・Destroy処理へ復旧。Inspectorの押出し項目・FixedUpdateフック・予測の押出しタイマーも撤去。
 - 復旧対象は今回の実験分のみ。既存STEP4-A/Bの未コミットの評価・診断コードとテスト/資料は保持。ユーザー指示により復旧したソース構成をdevelopへコミット/Pushする。評価結果の大量データはローカルに残し、Push対象に含めない。
 - 別案は復旧チェックポイントの後に検証。強制的な押出しを再導入しない。
+
+
+## 2026-10-20 押し出し撤回後：Colliderの内部境界を減らす対策
+
+- 復旧チェックポイント32b94b912d500f6fa8c90acaeaee20b997f16715をorigin/developへPush済み。STEP4-A/Bの未コミットのソース/資料も含め、押し出し実験導入前のゲーム処理を保存。評価データはPushせず保持。新対策はこのコミットの後のローカル変更であり、未コミット/未Push。
+- ブラウザ調査：Box2D開発者の公式記事 https://box2d.org/posts/2020/04/stuck-inside/ は、深い重なりと凸分割の内部接触が互いに対抗し拘束される現象を説明。UnityのPolygonCollider2D.useDelaunayMesh公式資料および2022.3.21f1同梱APIも確認。資料の説明は今回の内部ソルバー原因の直接証明ではない。
+- 対照試験ではDelaunay全体有効化や一部種類のみ有効化、内部形状への重なり追加、元頂点の凸包化のみでは別ケースが悪化。実ゲームへは採用しない。作業中の試験専用MergeColliderGeometryは撤去し、未検証の実験コードを実ゲームへ残さない。
+- ユーザーが「当たり判定の小さな形状差は許容する」と回答。画像/生成位置/Transformサイズを維持し、11種類のPrefabのPolygonCollider2D.m_Pointsだけを8支持線で作る凸8頂点へ変更。支持線は元の点群のx,y,x+y,x-y方向の極値から導出。元点をすべて包含し、ローカルの上下左右の極値は同じ。円Collider化や追加の力/座標補正はしない。重力/摩擦/質量設定/得点/出現確率/Scene/物理設定/.meta/進化順は未変更。
+- 元点列に非隣接辺の交差を確認（チェリー125組、パイナップル5組、閾値付き線分交差）。細かい折返し等の不整合を含む。8頂点化後のネイティブshapeCount=1により分割境界がなくなる。これが改善要因であることを実験は支持するが、全てのめり込み原因の特定ではない。
+- 当たり判定の面積増分（元の各pathの靴紐面積の和との比較、重複pathのunion面積ではない）：apple5.779%、cherry5.566%、grap9.414%、kaki3.676%、melon5.320%、nashi5.473%、orange5.946%、painaple4.878%、peach5.168%、storobary6.074%、watermelon5.214%。画像や軸方向サイズは同一でも角付近の接触、転がり、形状から計算される慣性等の挙動は変わり得る。
+- 隔離Sceneの48配置×300tick（6ゲーム秒）比較：元形状では6件が全tickで深さ0.03超のまま継続、最終最大0.373326。合体後のみ8頂点化/全体8頂点化とも深さ0.03超の残存0、最終最大約0.005007。比較JSONはPython/merge_overlap_probe_20261020_144227_218.json。48配置中17が合体前に隣接果物と両親が離れた配置、31は元から重なるストレス配置。一般的な実プレイでの発生率や完全保証と解釈しない。
+- 実Prefab適用後の回帰：Python/merge_overlap_probe_20261020_144639_898.json、48配置すべてで合体/shapeCount=1/最終深さ<=0.03を確認、最大0.00500677、637.25ms、実ゲームのスコア/RNG不変。EditorのTools > Suika > Run Merge Overlap Probeで再実行可能。テストは壁/床なし。実際の密集盤面や長期プレイ全体は未確認。
+- Unityで新しいPlayから実通信10落下（中央8、左右端各1）、合体1、加点6、reset成功、Console例外0、Stop確認。Python/collider_fix_live_20261020.jsonでは得点/種類/ゲームオーバー真偽/tickが10/10一致。ゲームオーバー正例は0。厳密な全物理値の閾値内は6/10、最大位置差0.0264502、予測平均4.40827ms。別条件の旧平均11.43msと速度/精度を直接比較しない。予測誤差の問題は残る。
+- Pythonの幾何回帰5件追加、合計37テスト成功0.994秒。復旧コミットの元Prefabと比較し、8頂点の凸性/元点包含/軸方向極値不変/面積増分10%以下/Polygon点以外の全設定不変を検査。既存UDP回帰も成功。
+- 途中の試験エラー：Play中のスクリプト再コンパイル後、UDPCommunicatorUnity.CompleteStep(168行)でNullReferenceExceptionが反復。Stop→新Playで復旧し最終実通信では再発なし。再生中のコード再読込への耐性は別件として未修正。試験用凸包処理のone-path仮定でもInvalidOperationExceptionが発生し、kakiに2pathがあることを確認後、隔離試験を修正。いずれも記録し、最終テストの成功と混同しない。
+- 最終変更：Unity/Assets/Scenes/Prefabの11果物、Editor/MergeOverlapProbe.cs、Python/tests/test_fruit_collider_geometry.py、当ログ。ゲーム本体C#には押し出し/補正を残さない。次はユーザーが以前問題の出た密集合体を確認し、必要ならその配置を回帰に追加。旧1,000試行の精度は新形状では再評価が必要。STEP5未実装。
+
+
+## 2026-10-21 画面サイズによる配置ずれ・手動Collider変更への対応
+- developで実施。ユーザーが11果物をCircle/Capsuleへ変更し、旧Polygonを無効化した状態を確認。今回Prefabは変更していない。
+- 原因：背景は幅基準CanvasScaler、得点は固定ピクセルOverlay、主人公/NEXTはworld座標で基準が混在。
+- 背景・得点CanvasをWorld Spaceへ変更。背景の既存800×436.9686をcameraの高さ10world unitsに合わせる。得点は既存テキスト枠が画面内に入る1000px基準で配置（見た目の基準位置は要ユーザー確認）。GameViewportで背景の縦横比を保つviewportに収める。余白ができる方式でcamera orthographicSize=5、物理座標、game-over高さ計算は維持。
+- FruitColliderShape.Getで有効Colliderを参照。保持/落下/壁安全範囲/予測/合体/摩擦設定/診断をCircle/Capsuleに対応。合体時に旧Polygonを再有効化する処理を除去。前回のPolygon形状専用テストと隔離probeも現在のColliderに対応。
+- Unity付属Roslyn＋Unityアセンブリ参照でruntime全C#のコンパイル成功（既存の未使用フィールド警告3件）。Pythonテスト成功。Scene配線・スケール・得点枠の画面内配置も自動検査。
+- Computer Useで起動中ウィンドウを確認したがUnity Editorは未起動。Play/リサイズの見た目/合体/実通信/新形状での予測精度は未検証。修正済み・動作未検証。旧Polygonで得た精度・めり込み統計は新形状の保証にならない。
+- コミット・Push未実施。STEP 5は未着手。
+
+### 2026-10-21 Editorコンパイルエラー修正
+- MergeOverlapProbe.csの75・76行：FruitEvolutionをGameObject引数へ渡していた2箇所をevolved.gameObjectへ修正。前回はruntimeのみコンパイルしEditor側の型エラーを見落としていた。
+- Unity付属Roslynでruntime全C#とAssets/Editor内の全C#を別アセンブリとしてコンパイル成功。Play動作は未確認。コミット・Pushなし。
+
+## 2026-10-21 右移動停止・ブドウのプレビュー落下・NEXT位置
+- develop。PlayerControllerの保持/NEXT初期化で既存Rigidbody2Dの速度・角速度・重力を0へ。NEXTのみsimulated=false、保持側は壁トリガー用にsimulated=true。DropFruitで速度0、重力1、simulated=trueへ戻す。ブドウPrefabに元からあるDynamic/GravityScale=1がプレビュー中にも働いていた原因を確認。Prefab・形状・質量・全体重力は変更なし。
+- FruitCollisionHandlerのEnter/Exit通知はplayerController.currentFruitと一致する果物だけ許可。落下済み果物が後から壁通知を出し、現在の右移動フラグを立てる経路を遮断。Spawn時に前の果物の左右フラグをクリア。
+- NEXTは背景RectTransformの正規化座標(1625/1920,1-290/1080)へSpriteRendererの画像bounds中心を合わせる。背景の丸の中心を原画像で確認。SceneのPlayer Prefabインスタンスに背景参照のoverride追加。InspectorのNext Preview Anchorで微調整可能。
+- SuikaPhysicsSimulatorも同じPreparePreviewBody/ReleaseFruitBodyを使用し、予測側だけ古い落下初速度になる不整合を防止。
+- 新規Editor/PreviewControlProbe：Play中Tools/Suika/Run Preview Control Probe (Ctrl+Shift+F10)。元の果物配列を一時的にブドウ限定にして、0.4ゲーム秒の保持/NEXT安定、落下開始速度0・重力1、旧果物の右壁コールバック無視、新果物でMoveRight可能、NEXT画像中心と背景anchor一致を検証し、元配列に戻してreset。実UnityでPASS。
+- Runtime/Editor全C#コンパイル成功、Python36テスト成功。Computer UseでPlay・回帰probe実行・NEXTが丸の中心にある見た目を確認。Consoleエラー0・警告0（Play検証時）。停止して終了。
+- Scene Reload操作は最初に自動承認審査が未保存変更破棄の可能性で拒否。ユーザーが未保存変更なし・Reload許可と回答後に再読み込みした。
+- キーボード長押しを含む長時間の実プレイ、今回の修正後の予測精度統計は未確認。コミット・Pushなし。
+
+## 2026-10-21 STEP 4 現在のCircle/Capsule環境へ予測を適応
+- ユーザーが実ゲームのバグ解消を確認。developで対応、コミット/Pushなし。手動変更済みPrefab・物理設定・Sceneは今回変更しない。Editor内の未保存Scene（Speed=10等）も保存/再読み込みせず保持。
+- SuikaPhysicsSimulator.Copy：盤面のruntime Rigidbody状態コピーとfresh prefab生成を区別。修正前の短時間比較でイチゴ合体→ブドウ生成時にRigidbody clone state mismatch (grap inertia=0.0001/0)を実際に確認。Prefab資産の未初期化慣性0/重心をcloneへ上書きせず、実ゲーム同様に生成されたColliderからUnityが計算した値を使用。実盤面のbodyコピーは従来通り状態を復元・検査（simulatedも追加）。
+- 予測内でNEXT表示を次の操作用へ切り替える際にPreparePreviewBody(false)を呼び、simulated=true/重力0/速度0へ。PlayerDropPlacement.GetDropRangeForFruitを実ゲーム・予測で共有し、次の大きな果物を同じ壁・形状・ワープ境界・clearanceで安全範囲にclamp。果物形状はInstantiateで現在のCircle/Capsuleと無効Polygonの設定をそのままコピー、旧Polygonを有効化しない。
+- 予測結果にcurrent_fruitとdrop_rangeを追加。Python/check_unity_prediction.pyで次の操作用果物の種類・位置・移動範囲も照合。旧JSONとの比較互換性を維持。SourceSignatureはpreview/重力/simulated/質量/慣性も検査するよう拡張。
+- MergeOverlapProbeにイチゴ合体→ブドウの3配置を追加し51配置へ。実行結果Python/merge_overlap_probe_20261020_163758_902.json：51/51通過、670.162ms、最終最大重なり深さ0.00502026、source_unchanged=true。壁/床なし、300tickの隔離ストレス試験であり、実ゲーム全条件の保証ではない。
+- 修正前10落下（simulation_adaptation_before_20261021.json）：得点/種類9/10、厳密7/10、平均5.66979ms、最大位置誤差0.00880760（種類不一致の1件は位置対応不可）。修正後10落下（simulation_adaptation_after_20261021.json）：得点/種類/個数/game-over真偽/tick/次操作果物種類/範囲すべて10/10、厳密9/10。最大位置0.00112942world、速度0.00291312world/s、角度0.298187度。合体正例1（+6）一致。別々の乱数エピソードのため前後差を改善率とは解釈しない。game-over正例なし。
+- 修正後の予測平均4.8037ms、中央値2.8746ms。平均内訳Scene生成0.19215ms、copy1.54889ms、物理2.71175ms、解放予約0.05142ms。解放完了までの非同期時間は含まない。
+- 別途2秒horizonの同種2落下（simulation_adaptation_merge_20261021.json）：2/2厳密一致、実/予測とも合体+10、位置/速度/角度の最大誤差0、平均2.15725ms。
+- 既存evaluate_unity_prediction.pyも5試行、x=0/0.5/1、25post ticksで実通信確認（eval_adapted_smoke_20261021、completed/eligible 5/5、除外0、実合体正例1）。旧1,000試行に追加/上書きせず別ディレクトリへ記録。大規模な予測精度評価は再実施していない。
+- Runtime/Editor全C#をUnity付属Roslynでコンパイル成功、Python38テスト成功。Computer UseでPlay/隔離合体probe/Console確認/Stopを実施。修正後PlayのConsole例外0・警告0。接触履歴・Destroyと描画frame順序の既存制約は残り、validated_for_search=falseのまま。STEP 5未実装。
+
+
+## 2026-10-21 ユーザー指定比率による果物Scale調整（第1段階）
+- ユーザーの個別指示で10果物Prefabのroot Transform.localScaleのみ変更。籠の内幅=6.40031985を基準にColliderの直径/横幅を合わせる。りんごは変更せず、Scene・コード・物理設定・Collider形状/半径/Offset/有効状態・質量の設定値も変更しない。シミュレーター対応は調整完了連絡後。
+- ブドウ (grap.prefab)：籠:果物=175:24、目標横幅=0.87775815、Scale XYZ=0.248333388。
+- サクランボ (cherry.prefab)：籠:果物=175:12、目標横幅=0.43887908、Scale XYZ=0.088810558。
+- オレンジ (orange.prefab)：籠:果物=175:26、目標横幅=0.95090466、Scale XYZ=0.669350624。
+- いちご (storobary.prefab)：籠:果物=175:16、目標横幅=0.58517210、Scale XYZ=0.892669744。
+- かき (kaki.prefab)：籠:果物=175:33、目標横幅=1.20691746、Scale XYZ=0.456446455。
+- パイナップル (painaple.prefab)：籠:果物=175:68、目標横幅=2.48698143、Scale XYZ=1.276202332。
+- メロン (melon.prefab)：籠:果物=175:68、目標横幅=2.48698143、Scale XYZ=0.545546288。
+- スイカ (watermelon.prefab)：籠:果物=22:12.7、目標横幅=3.69473010、Scale XYZ=0.822984781。
+- モモ (peach.prefab)：籠:果物=22:7.7、目標横幅=2.24011195、Scale XYZ=0.957816798。
+- ナシ (nashi.prefab)：籠:果物=24:5、目標横幅=1.33339997、Scale XYZ=0.686021435。
+- モモは有効CapsuleCollider2DのSize.xを使用しCapsule/縦横比/Directionを維持。円の半径式は使わない。実ゲームの生成時の回転Quaternion.identityにおける横幅を基準とし、転がりによる回転後の幅が一定になるという意味ではない。
+- 10ファイルすべてScale行以外の内容不変・保存値での比率誤差relative2e-8以内を検査。Unityは停止中であることをComputer Useで確認。Editor内の未保存Sceneには触れず、Play動作/見た目/物理予測の再検証は未実施。コミット・Pushなし。
+
+## 2026-10-21 接触後の果物だけをゲームオーバー対象にする修正（環境調整中）
+- ユーザーから開始直後のgame-overと、保持果物がラインを越える条件を報告。ゲーム側のGameManager.cs/FruitEvolution.csを最小修正。手動変更されたScene・Prefab・PlayerController・TimeManager等には書き込みなし。シミュレーター本体は調整完了連絡前のため変更なし。
+- FruitEvolution.HasCollidedをruntime状態として追加。保持/NEXTのIsPreviewはOnCollisionEnter2Dの対象外。落下後の通常衝突（壁・床・別の果物等）で接触済みになる。Trigger進入では接触済みにしない。合体生成果物は接触を原因として生まれるためHasCollided=trueを引き継ぐ。
+- CanTriggerGameOver(height)：active・非preview・非merging・接触済み・Transform Y>heightを条件にする。GameManagerはFruitタグとSimulation==nullも確認する。元果物のDestroy待ちと隔離予測果物を判定から除外。高さの算出式/Transform位置での比較/得点/物理設定/手動操作は維持。
+- MergeOverlapProbeにfresh未接触は低いラインでも対象外、接触合体後は対象、ラインと同じ高さは対象外、previewへ切替なら対象外のassertを追加。現在のPrefabで51配置×300tick成功。出力Python/merge_overlap_probe_20261021_053631_288.json。これは条件/接触/合体の検査であり、実ゲームのgame-over演出・再スタートまで通した正例テストではない。
+- Runtime/Editor全C#のコンパイル成功（既存未使用フィールド警告3）、Python38テスト成功。UnityのPlay開始後、実UDPでgame_over=false、score=0、held=true、盤面0、time_scale=1を取得し、さらに0.6秒待ってもfalseを確認。Console例外0・警告0。Play停止確認済み。
+- 第2段階でHasCollidedのruntimeコピー・予測GameOver条件・数値観測・必要な診断情報を新ルールに対応させる必要がある。現時点で既存の予測精度結果を新ルールの保証に用いない。環境全体の再調査とシミュレーター適応はユーザーの調整完了連絡後。
+- コミット/Pushなし。Editorの未保存Sceneを保存/再読込せず保持した。
+
+## 2026-10-21 手前画像の描画順・左右端の安全移動・梨/メロン比率
+- ユーザー指示で描画順と端の不具合を修正。画像の加工/取り込み/配置/位置合わせは行わない。Sceneの変更は既存Background Canvas=-100、得点Canvas=40、ユーザー配置済みsuikaBackground_lyout SpriteRenderer=20のsortingOrderのみ。保存済みのTransform/画像参照は不変と機械検査。Player Prefabの描画順30、painaple Prefab=-10。全Sorting LayerはDefault。Scene/対象PrefabにSortingGroupなし。
+- 保持果物は生成時にOrder=31へ（Playerより前）、落下時にPrefab本来の値へ復元。NEXT表示は30。背景のWorld SpaceとGameViewportは既存実装を利用し、Camera zoomやTransformは変更しない。前景の背景子配置、UI Image＋子Canvas Override Sortingの手順とPNG原寸/切抜寸法の合わせ方をdocs/RENDERING_AND_PLACEMENT.mdへ記載。新しい前景オブジェクトは作成せず、既存の配置も動かしていない。
+- 端の原因：手動はrb.velocity＋壁triggerフラグだけで移動しAI安全範囲を通らず、落下前の安全確認もなく、手動では大きいNEXTの初期clampが未適用。固定ワープ境界も籠サイズの変更に追随しなかった。
+- PlayerController：手動の横移動をFixedUpdateのinput*speed*fixedDeltaTimeにし、GetDropRange/TryMoveHeldToでclamp。キー/A/D/既存UDPの強弱入力値と速度設定は維持。Update追従後・生成直後・DropFruit直前にも同じ範囲/Distance検査を使用。移動範囲不明/重なり時には落下させない。固定境界での中央ワープを廃止し左右壁の内面と実形状で制限（旧Inspector閾値フィールドは互換のため残るが範囲制限には使わない）。既存の接触後game-over判定は変更/無効化していない。
+- PlayerDropPlacement：手動/AI/将来予測のGetDropRangeForFruitを共用。左右2壁をX順に判定し、果物Colliderの実bounds/Offset/Scale/Circle/Capsuleと3*contactOffsetの余白を使用。壁回転/不足/曖昧/果物が入らない場合はfail closed。壁が保持果物の高さをカバーする現構成を前提とする。
+- Held Fruit OffsetをInspector公開。既存Updateの値(-0.7,-0.42,-1)を初期値とし、SpawnFruitだけY=-0.39だった不一致も統一。保存されたPlayer位置/Scaleは変更しない。新しい大きな保持果物が端に入らないときはランタイムでPlayerと新果物だけ必要な分内側に置く。
+- 追加指定：籠内幅6.40031985に対し梨35:1＝直径0.1828662814、Radius0.9718355、Scale XYZ0.094082940。メロン35:17＝直径3.1087267843、Radius2.2793496、Scale XYZ0.681932860。対象2PrefabのScale行以外は不変と検査。他果物のサイズとCollider/物理設定は変更なし。
+- 新Editor/PlayerBoundaryProbe（PlayでTools/Suika/Run Player Boundary Probe、Ctrl+Shift+F11）：全11種類×両端22＋小果物の端から最大果物NEXTへの切替2＝24ケース。実際の手動FixedUpdateを直接100回呼び、native bounds/Collider.Distanceで非重なり、落下可、保持Order31/落下時Prefab order復元を検査。24/24成功。これはdefault physicsを100tick進めたテストではない。
+- 普通のUnityEnv.step（予測比較は使用しない）でも新規resetを挟みx=0/1を4落下。type4左、type0右、type0左、type1右が全てdrop_success=true、applied_xは対応するmin/maxと一致、game_over=false。長時間の積み上げや正当なgame-over正例は今回は未実施。
+- Runtime/Editor全C#コンパイル成功、Python38テスト成功。途中の追記スクリプトでUTF-8ファイルのCP932読取エラーが出たが、書込前に停止し、encoding明示で再実行して解決。最終PlayのConsoleエラー0・警告0。ウィンドウ960幅→1920幅の最大化でGameView縦横比を変え、構図/背景/Player/NEXT/得点の相対位置維持を目視確認。Stopし元のウィンドウ寸法へ戻した。
+- GameViewportコード/物理設定/ゲームオーバーコード/SuikaPhysicsSimulator本体には今回書込なし。予測側のHasCollided等を含む全面対応はユーザーの環境調整完了後。Scene再読込は編集前の未保存マークがないことを確認して実施。コミット・Pushなし。
+
+
+## 2026-10-21 梨の比率訂正と0.2秒の落下制限
+- ユーザー訂正で梨は籠:直径=7:2へ。籠内幅6.40031985、Circle Radius0.9718355から目標直径1.8286628143、Scale XYZ0.940829397。梨PrefabはScale行のみ変更、Collider/質量/他果物/Sceneは変更なし。
+- PlayerController.dropCooldownSeconds=0.2をInspector公開（Drop Cooldown Seconds）。成功した落下時点からTime.timeAsDoubleによるゲーム内時間で次回受付時刻を管理。保持/NEXT生成や音は制限中に追加発生しない。ResetForEpisodeで解除し新しいエピソードの最初の落下は即時可能。時間停止中は落下不可。
+- TryDropAtも同じCanDropFruitで制限。UDP stepは目標位置で制限解除まで待ち、予約済みaction_idを重複実行しない。通常の落下後0.5秒の観測窓は変更しない。将来の予測には開始時点の残り待ち時間のコピーが必要（今回はSuikaPhysicsSimulatorへの書込なし、環境調整完了後に対応）。
+- Editor/DropCooldownProbe（PlayでTools > Suika > Run Drop Cooldown Probe）を追加。Unity実行で同フレーム20回連打・0.2秒未満のフレームでの追加落下が拒否、0.22秒以降の落下成功、resetで即時受付に戻ることを確認。Consoleエラー0・警告0、Stop済み。途中でCtrl+Shift+F12がTMPメニューと競合したため、検証メニューのショートカットは除去しメニュー直接実行にした。
+- Runtime/Editor全C#コンパイル成功。Python38テスト成功。UDP既存回帰3群と、新規の制限中待機→解除後1回落下（再送含む）回帰成功。コミット・Pushなし。
+
+
+## 2026-10-21 落下間隔0.4秒と現在のゲーム環境への予測対応
+- ユーザーがシミュレーター適応を明示許可。developで作業、コミット/Pushなし。ゲームの位置/Scale/形状/質量/重力/摩擦/進化/点数は変更なし。PlayerController初期値とPlayer Prefab、gameDisplay SceneのdropCooldownSecondsだけを0.4へ明示保存。コードだけ変更するとEditorの再コンパイル時に旧0.2が保持されたため、保存値を明示して再読込・実UDPで0.400000006を確認。再読込前に未保存Sceneマークなしを確認。
+- SuikaPhysicsSimulator：実体の有効Circle/Capsule・実行時Rigidbody・壁床を既存Copyでコピーし、現在の共有GetDropRangeForFruitとAI Move Speedを利用。FruitEvolution.CopyPredictionStateFromでIsPreview/HasCollidedを明示継承（Instantiateではauto-propertyが復元されない）。予測game-overも実ゲームのCanTriggerGameOverを共用し、保持/NEXTを除外。合体は既存FruitEvolutionを共用し接触済みを継承。
+- 予測の最初の物理更新時刻はTime.fixedTimeAsDouble+fixedDeltaTime。nextDropAllowedAtと比較し、目標到着後も制限中は落下せずSimulateを継続。待機予算をループ上限へ加算。落下後の0.5秒窓は実際の落下後から維持。Resultにcooldown_wait_steps/drop_cooldown_seconds/initial_cooldown_remaining追加。
+- 数値観測：drop_cooldown_seconds/drop_cooldown_remaining、各果物has_collidedを追加。診断Frameにもhas_collidedを追加。SourceSignatureでも接触済みと落下許可時刻・設定値の不変を検査。Pythonの自動timeoutは移動と待機が並行するためmax(移動時間,残り待機)+落下後窓で算出しtimeScaleで換算。既存UDPのaction_id/再送/1個だけ落下は維持。
+- C# Runtime/Editor全体コンパイル成功（既存未使用フィールド警告3）。Python39テスト成功、UDPライフサイクル/再送/待機/観測窓の回帰成功。Editorの0.4秒Probeで同フレーム20回および早期落下拒否、0.42秒以降受付、reset即時受付を確認。
+- 最終保存値0.4での実UDP比較10試行（x=.65を8回、両端各1）：得点/種類個数/game-over/物理更新回数/次の保持果物と範囲は10/10一致、厳密数値基準は8/10。最大位置誤差0.00320562 world unit、速度0.10822645 unit/s、角度0.91485596度、角速度15.5564239度/s。落下X誤差最大1.78814e-7。平均5.73202ms、中央値2.74415ms（初回19.7069ms含む）。保存Python/simulation_env04_20261021_final.json。game-over正例は0件であり検出能力の保証ではない。接触中に開始する予測のcold-contact-cache等の既存制約は残り、完全一致・統計的精度改善は主張しない。
+- CooldownPredictionProbeをDropCooldownProbe.csへ追加。テスト中のみ出現リストをサクランボに固定し、通常Drop直後にcompare_stepを同一呼出し内で予約。元リストは終了/例外時に復元しreset。0.4秒待機20tickを含む計121tickが実ゲームと一致、合体1回/加点1一致、source_unchanged=true。最大位置誤差1.90735e-6、速度/角度/角速度誤差0、予測3.8615ms。保存Python/cooldown_prediction_20261021_065710_742.json。未来NEXT以外の乱数は予測に渡さない。
+- native隔離合体/接触/ゲームオーバー条件Probeは51ケース×300tick完走（Python/merge_overlap_probe_20261021_065813_815.json）。手動左右端/全11種類/大きいNEXTの安全範囲Probeも24/24成功（後者はdefault physicsを100tick進めるテストではない）。Play Consoleは新規例外0/警告0、停止済み。長時間積み上げ、game-over正例を含む実ゲーム比較、1000試行統計の再検証は未実施。
+- 参考：明示保存前の比較Python/simulation_env04_20261021_normal.jsonとcooldown_prediction_20261021_065233_647.jsonはEditorが0.2を保持した段階の結果で、最終0.4の評価に含めない。ランダムな同種NEXTを探す旧merge-caseは10回で揃わず未実施となったため、上記の確定fixtureで代替。単発Python確認でsrc未追加のimportエラーが出たが、srcを明示して実UDP確認成功。既存の評価出力は削除/上書きなし。STEP 5は実装せず、予測精度の大規模評価は別途必要。
+
+
+## 2026-10-21 STEP 4主要問題の改善・STEP 5設計案
+- ユーザーの新方針：完全一致に固執せず、主要問題の改善/短時間検証後にSTEP 5を設計。実装は設計案への確認後。今回までの成果をdevelopへ通常commit/pushする許可を受領。
+- GO条件/物理更新順は変更せず、Recorderにgame_over_candidate（同一物理フェーズの条件成立）を追加。確定フラグ、最初の成立Frame、step完了時の確定結果と区別。接触済み差も診断。cold-contact-cacheや描画/Destroy境界の予測誤差と試行111見逃しの根治未確認を明記。
+- 命令受付/step完了で非重複の報酬区間を記録。step中/step間/進行中区間/旧episode reset時集計、得点保存則、read-only観測、再送の二重計上防止。Pythonで区間/保存則を検査し、評価summaryも最新episode累積値のみ集計。step返り値rewardへのgapの単純加算はしない。
+- 手動通常入力0.5とSpeedからEffectiveAIMoveSpeedを導出、既定で自動追従。現設定で手動/AI/予測3.75。旧aiMoveSpeedは追従無効時の個別値として維持。
+- Python46テスト、全Runtime/Editor C#compile、UDP/報酬ledger回帰成功。20試行実UDP比較は得点/合体20/20（正例5）、更新数20/20、参照平均6.111175ms。位置誤差最大0.066580675等は残る。速度・盤面・サンプル数が異なり旧500回との改善率は断定しない。
+- 実際の思考待ち時間に自然加点3点が発生し、step合計20+open gap3=23点の保存則とreset旧episode集計保持を実UDP確認。native速度3.75計測/ライン上接触GO正例/候補判定→Update確定の記録/0.4秒待機・合体・ledgerも確認。最終Console例外0/警告0、Play停止。
+- テスト途中のJSON null空オブジェクト受信拒否はpresentフラグとテストで解決。GO fixtureの初版はCollider offset差で接触しなかったため、テストのbounds.center配置のみ修正。詳細・関数・行番号・変更前後のコードはSTEP4_IMPROVEMENTS.md。生ログはローカルだけに保持。
+- STEP5_DESIGN.mdは5候補、同一Unity受付で予測/評価/選択/step予約、単純得点/高さ/危険度/偏り評価、将来snapshot照合と判断部分交換を提案。未実装。DEVELOPMENT_PLAN.mdに数十手先/不確実性/複数AIモード/高速無描画/保存再開の長期目標を記録。STEP 6以降は開始せず。
