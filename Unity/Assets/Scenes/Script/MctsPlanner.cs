@@ -40,6 +40,8 @@ public static class MctsPlanner
     }
     [Serializable] public class Report
     {
+        public bool experimental_depth,compact_report;public int search_go_samples,max_reached_depth;
+        public MctsDepthControl.Level[] depth_metrics;public MctsDepthControl.Choice depth_selection;
         public string budget_stop_reason;public int iteration_cap;public double time_limit_ms,time_overrun_ms;public MctsAdaptiveControl.Checkpoint[] budget_checkpoints;public MctsAdaptiveControl.Addition[] candidate_additions;
         public string algorithm="stochastic UCT",leaf,selection_rule="exclude immediate GO; max root visits, then mean points; existing all-GO fallback";
         public string uncertainty="uniform public prefab-slot chance nodes; never live hidden RNG",physics_accuracy="experimental: root solver cache and render-frame GO/Destroy timing not cloned";
@@ -47,7 +49,7 @@ public static class MctsPlanner
         public CoarseToFineCandidates.Report refinement;public double mcts_search_ms;public string candidate_policy;public double candidate_generation_ms;public int candidate_generation_calls;
         public int[] public_spawn_types;public int leaf_cache_hits,skipped_physics_ticks;
         public bool irrelevant_final_chance_collapsed;
-        public int requested_iterations,completed_iterations,max_depth,seed,public_spawn_slots,physics_advances,total_physics_ticks,decision_nodes;
+        public int requested_iterations,completed_iterations,max_depth,seed,public_spawn_slots,physics_advances,decision_nodes;public long total_physics_ticks;
         public double elapsed_ms,managed_start_bytes,managed_end_bytes,unity_allocated_start_bytes,unity_allocated_sampled_peak_bytes;
         public bool source_unchanged,prefixes_match=true;public NodeMetric[] nodes;public IterationMetric[] iterations;public MctsPerformance.Metric[] profile;
     }
@@ -141,6 +143,7 @@ public static class MctsPlanner
     }
     public static IEnumerator<StepPlanner.Decision> PlanFrames(PlayerController player,GameManager manager,Collider2D floor,PlanningSettings settings,SuikaPhysicsSimulator.PathSession frozenRoot=null)
     {
+        var extendedTimer=settings.mcts_extended_budget?Stopwatch.StartNew():null;
         var s=settings.Freeze();bool open=s.tree_policy=="public_open_loop",extend=s.expansion_policy=="chance_decision";
         if(floor==null || !(floor is BoxCollider2D) || !floor.enabled || floor.isTrigger || Mathf.Abs(Mathf.DeltaAngle(floor.transform.eulerAngles.z,0))>.001f)
             throw new InvalidOperationException("MCTS requires the existing horizontal planning floor");
@@ -150,7 +153,7 @@ public static class MctsPlanner
         var network=s.ai_mode=="mcts_value"?SuikaValueNetwork.Load(s.value_model_path):null;
         var publicTypes=new int[slots];for(int slot=0;slot<slots;slot++)publicTypes[slot]=player.fruits[slot].GetComponent<FruitEvolution>().fruitType;
         var rng=new System.Random(s.mcts_seed);var root=SearchNode(0,0,s);var nodes=new List<Node>{root};
-        var report=new Report {leaf=network==null?"reward":"value",requested_iterations=s.mcts_iterations,max_depth=s.mcts_max_depth,seed=s.mcts_seed,
+        var report=new Report {experimental_depth=s.mcts_max_depth>=16,leaf=network==null?"reward":"value",requested_iterations=s.mcts_iterations,max_depth=s.mcts_max_depth,seed=s.mcts_seed,
             candidate_policy=s.candidate_policy,public_spawn_slots=slots,public_spawn_types=publicTypes,irrelevant_final_chance_collapsed=network==null&&s.mcts_max_depth>=2,managed_start_bytes=GC.GetTotalMemory(false),unity_allocated_start_bytes=UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong()};
         report.unity_allocated_sampled_peak_bytes=report.unity_allocated_start_bytes;
         var d=new StepPlanner.Decision {settings=s,ai_mode=s.ai_mode,evaluation_version="step8b-uct-"+report.leaf,mcts=report,
@@ -166,7 +169,7 @@ public static class MctsPlanner
             var crng=new System.Random(s.mcts_seed^0x356A9);report.common_chance_samples=new int[s.mcts_iterations*s.mcts_max_depth];
             for(int i=0;i<report.common_chance_samples.Length;i++)report.common_chance_samples[i]=crng.Next(slots);
         }
-        var timer=Stopwatch.StartNew();var iterations=new List<IterationMetric>();
+        var timer=extendedTimer??Stopwatch.StartNew();var iterations=new List<IterationMetric>();
         if(s.candidate_policy=="coarse-root") {
             var generation=Stopwatch.StartNew();
             using(var preview=frozenRoot==null?new SuikaPhysicsSimulator.PathSession(player,manager,floor):frozenRoot.Fork(manager))
@@ -176,8 +179,8 @@ public static class MctsPlanner
             root.positions=new DropCandidateGenerator.Set {x=report.refinement.positions,sources=new string[s.candidate_count]};
             for(int i=0;i<s.candidate_count;i++)root.positions.sources[i]=Array.IndexOf(report.refinement.added,root.positions.x[i])>=0?"coarse-midpoint":"coarse-anchor";
         }
-        bool flexible=s.mcts_budget_mode!="fixed";
-        int cap=flexible?s.mcts_max_iterations:s.mcts_iterations;
+        bool flexible=s.mcts_budget_mode!="fixed"||s.mcts_extended_budget;
+        int cap=s.mcts_budget_mode!="fixed"?s.mcts_max_iterations:s.mcts_iterations;
         report.iteration_cap=cap;if(flexible)report.requested_iterations=cap;report.time_limit_ms=flexible?s.mcts_time_limit_seconds*1000d:0;
         report.budget_stop_reason="iteration_limit";
         var checkpoints=new List<MctsAdaptiveControl.Checkpoint>();var additions=new List<MctsAdaptiveControl.Addition>();
@@ -352,6 +355,7 @@ public static class MctsPlanner
                     merges=merges+path.BoundaryWaitMerges+(cachedLeaf==null?0:cachedLeaf.immediate.merges),game_over=terminal,tree_node_ids=treeIds.ToArray(),public_observations=observations.ToArray(),state_signatures=stateDigests.ToArray(),rollout_steps=rolloutSteps.ToArray(),guided_steps=guidedSteps.ToArray(),actions=actions.ToArray(),chance_slots=chances.ToArray(),action_x=actionXs==null?null:actionXs.ToArray(),
                     leaf_points=leaf,total_points=finalScore-initialScore+leaf,state_digest=MctsPerformance.VerifyStates?Digest(path.StateSignature()):null,elapsed_ms=watch.Elapsed.TotalMilliseconds});
             }
+            if(s.mcts_extended_budget&&!s.mcts_full_trace){var item=iterations[iterations.Count-1];item.actions=null;item.chance_slots=null;item.tree_node_ids=null;item.public_observations=null;item.state_signatures=null;item.action_x=null;item.guided_steps=null;item.coverage_forced_steps=null;item.state_digest=null;}
             report.completed_iterations++;
             if(s.mcts_budget_mode=="adaptive"&&report.completed_iterations>=nextCheckpoint) {
                 var checkpoint=MctsAdaptiveControl.Assess(root,s,report.completed_iterations,previousWinner,previousMean);
@@ -361,6 +365,7 @@ public static class MctsPlanner
             }
             report.unity_allocated_sampled_peak_bytes=Math.Max(report.unity_allocated_sampled_peak_bytes,UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong());
         }
+        if(s.mcts_extended_budget&&report.completed_iterations<32)throw new InvalidOperationException("Extended MCTS minimum32 not reached; no drop; completed="+report.completed_iterations+"; elapsed_ms="+timer.Elapsed.TotalMilliseconds+"; time_limit_ms="+report.time_limit_ms+"; overrun_ms="+Math.Max(0,timer.Elapsed.TotalMilliseconds-report.time_limit_ms));
         if(report.completed_iterations==0)throw new InvalidOperationException("MCTS time limit: completed_iterations=0; no drop; elapsed_ms="+timer.Elapsed.TotalMilliseconds);
         report.budget_checkpoints=checkpoints.ToArray();report.candidate_additions=additions.ToArray();
         for(int i=0;i<d.candidates.Length;i++)
@@ -402,7 +407,7 @@ public static class MctsPlanner
             }
             metrics.Add(new NodeMetric {unvisited_order=n.unvisited_order,id=n.id,depth=n.depth,visits=n.visits,arrivals=n.arrivals,distinct_states=n.state_signatures==null?0:n.state_signatures.Count,public_context=n.public_context,history_key=n.history_key,actions=rows});
         }
-        report.nodes=metrics.ToArray();report.iterations=iterations.ToArray();report.decision_nodes=nodes.Count;
+        report.nodes=metrics.ToArray();report.iterations=iterations.ToArray();if(s.mcts_extended_budget){report.depth_metrics=MctsDepthControl.Levels(report);foreach(var it in iterations){report.search_go_samples+=it.game_over?1:0;report.max_reached_depth=Math.Max(report.max_reached_depth,it.depth);}if(!s.mcts_full_trace){report.compact_report=true;report.iterations=new IterationMetric[0];report.nodes=new[]{report.nodes[0]};}}report.decision_nodes=nodes.Count;
         report.managed_end_bytes=GC.GetTotalMemory(false);report.elapsed_ms=timer.Elapsed.TotalMilliseconds;report.time_overrun_ms=flexible?Math.Max(0,report.elapsed_ms-report.time_limit_ms):0;report.mcts_search_ms=report.elapsed_ms-(report.refinement==null?0:report.refinement.total_ms);
         d.same_source_verified=report.source_unchanged&&report.prefixes_match;d.evaluated_count=d.candidates.Length;if(flexible){d.evaluated_count=0;foreach(var candidate in d.candidates)if(candidate.success)d.evaluated_count++;}d.elapsed_ms=report.elapsed_ms;yield return d;
     }

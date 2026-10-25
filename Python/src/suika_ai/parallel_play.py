@@ -195,7 +195,7 @@ def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,se
         raise ValueError("episodes/max_steps must be positive")
     settings=validate_planning_settings(settings or {})
     if settings["execution_mode"]!="sync" and games!=1:raise ValueError("Frame execution prototype supports one game only")
-    if (settings["mcts_budget_mode"]!="fixed" or settings["mcts_widening"] or settings["pair_coverage_iterations"]>0 or settings["candidate_policy"]=="coarse-root" or settings["action_order_policy"]!="index" or settings["expansion_policy"]!="legacy" or settings["tree_policy"]!="chance" or settings["rollout_policy"]!="random" or settings["mcts_common_chance"]) and games!=1:raise ValueError("Experimental tree/rollout sampling supports one game only")
+    if (settings["mcts_extended_budget"] or settings["mcts_budget_mode"]!="fixed" or settings["mcts_widening"] or settings["pair_coverage_iterations"]>0 or settings["candidate_policy"]=="coarse-root" or settings["action_order_policy"]!="index" or settings["expansion_policy"]!="legacy" or settings["tree_policy"]!="chance" or settings["rollout_policy"]!="random" or settings["mcts_common_chance"]) and games!=1:raise ValueError("Experimental tree/rollout sampling supports one game only")
     if settings["candidate_policy"]!="grid" and games!=1:raise ValueError("Board-five prototype supports one game only")
     if step_timeout is not None and (type(step_timeout) not in (int,float) or not __import__("math").isfinite(step_timeout) or step_timeout<=0):raise ValueError("Invalid step timeout")
     specs=worker_specs(games,base_port,seed);check_ports(specs)

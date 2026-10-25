@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UnityEngine;
 
 public partial class UDPCommunicatorUnity
@@ -9,6 +9,8 @@ public partial class UDPCommunicatorUnity
     public Collider2D planningFloor;
     public PlanningSettings planningSettings = new PlanningSettings();
     StepPlanner.Decision activePlanning;
+    MctsDepthControl.History depthHistory;
+    PlanningSettings depthRequested;
     string acceptedCommandKey;
     long lastActionId;
     float acceptedX;
@@ -38,6 +40,7 @@ public partial class UDPCommunicatorUnity
     void ClearStepForReset()
     {
         CancelFrameSearch();
+        depthHistory=null;depthRequested=null;
         ResetDropClock();
         ClearPathProbe();
         activeStep = null;
@@ -90,7 +93,11 @@ public partial class UDPCommunicatorUnity
             {
                 using(var probe=prepared==null?SuikaRuntimeProbe.BeginPlan(message.planning_settings ?? planningSettings):null)
                 {
-                    activePlanning=prepared??StepPlanner.Plan(playerController,gameManager,planningFloor,message.planning_settings ?? planningSettings);
+                    depthRequested=message.planning_settings??planningSettings;
+                    MctsDepthControl.Choice choice=null;
+                    var resolved=depthRequested.mcts_extended_budget?MctsDepthControl.Resolve(depthRequested,depthHistory,episodeId,out choice):depthRequested;
+                    activePlanning=prepared??StepPlanner.Plan(playerController,gameManager,planningFloor,resolved);
+                    if(choice!=null)activePlanning.mcts.depth_selection=choice;
                     if(probe!=null)probe.Finish(activePlanning);
                 }
                 activePlanning.episode_id=episodeId; activePlanning.source_state_id=stateId;
@@ -257,6 +264,7 @@ public partial class UDPCommunicatorUnity
         EndRewardStep(ScoreManager.Instance.GetScore());
         completedStep = new Observation { step_result = activeStep, prediction = pendingPrediction,
             actual_total_physics_steps = actualTotalPhysicsSteps, planning=activePlanning,path_comparison=pathReport };
+        depthHistory=MctsDepthControl.Capture(activePlanning,depthRequested??planningSettings,episodeId);
         activePlanning=null;
         pendingPrediction = null;
         activeStep = null;

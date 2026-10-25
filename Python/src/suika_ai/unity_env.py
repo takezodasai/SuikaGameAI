@@ -295,7 +295,7 @@ class UnityEnv:
             if timeout is None:
                 deadline = time.monotonic() + (self._movement_timeout(baseline, x) if _planning is None else
                     max(self._movement_timeout(baseline, 0), self._movement_timeout(baseline, 1))
-                    + 30 + (_planning.get("post_drop_steps", 25) * baseline.get("fixed_delta_time", .02)) / baseline.get("time_scale", 1))
+                    + 30 + (_planning.get("mcts_time_limit_seconds", 0) if _planning.get("mcts_extended_budget") else 0) + (_planning.get("post_drop_steps", 25) * baseline.get("fixed_delta_time", .02)) / baseline.get("time_scale", 1))
             action_id = self._action_id + 1
             command = dict(command="step", stream_id=baseline["stream_id"],
                            episode_id=baseline["episode_id"], action_id=action_id, x=float(x))
@@ -414,6 +414,7 @@ PLANNING_DEFAULTS = dict(candidate_policy="grid", candidate_count=5, post_drop_s
     score_scale=55.0, weight_height=0.0, weight_danger=0.0, weight_roughness=.2,
     danger_band_fraction=.15, uncontacted_risk_weight=.5, planning_budget_ms=0.0, ai_mode="heuristic", value_model_path="", search_leaf="reward", inter_step_wait_ticks=0, mcts_iterations=32, mcts_max_depth=3,
     pair_coverage_iterations=0, action_order_policy="index", expansion_policy="legacy", tree_policy="chance", rollout_policy="random", rollout_random_probability=.5, mcts_common_chance=False, mcts_seed=8191, mcts_exploration=2**.5, mcts_point_scale=55., two_step_exhaustive_reward=False, execution_mode="sync", frame_tick_slicing=False, frame_budget_ms=6., frame_timeout_seconds=24., frame_lead_ticks=150, frame_max_attempts=2)
+PLANNING_DEFAULTS.update(mcts_extended_budget=False,mcts_auto_depth=False,mcts_full_trace=False,auto_depth_min=2,auto_depth_max=8)
 PLANNING_DEFAULTS.update(mcts_budget_mode="fixed",mcts_time_limit_seconds=5.,mcts_max_iterations=256,adaptive_initial_iterations=32,adaptive_min_action_visits=4,adaptive_uncertainty_multiplier=1.,adaptive_value_tolerance=3.,adaptive_max_terminal_rate=.1,mcts_widening=False,widening_max_candidates=9,widening_after_visits=10,widening_min_action_visits=1,widening_min_spacing=.03125)
 
 
@@ -422,10 +423,15 @@ def validate_planning_settings(settings):
     if not isinstance(settings, dict) or set(settings) - PLANNING_DEFAULTS.keys():
         raise ValueError("Unknown planning setting")
     values = dict(PLANNING_DEFAULTS, **settings)
+    extended=values['mcts_extended_budget']
+    if type(extended) is not bool or type(values['mcts_auto_depth']) is not bool or type(values['mcts_full_trace']) is not bool:raise ValueError('Invalid extended/auto-depth switch')
+    if values['mcts_auto_depth'] and not extended:raise ValueError('Auto depth requires extended budget')
+    if any(type(values[k]) is not int for k in ('auto_depth_min','auto_depth_max')) or not 2<=values['auto_depth_min']<=values['auto_depth_max']<=8:raise ValueError('Auto depth range must be 2..8')
+    if extended and (values['ai_mode']!='mcts' or values['execution_mode']!='sync' or values['candidate_policy']!='grid' or values['tree_policy']!='chance' or values['rollout_policy']!='random' or values['expansion_policy']!='legacy' or values['action_order_policy']!='index' or values['pair_coverage_iterations']!=0 or values['mcts_common_chance'] or values['planning_budget_ms']!=0 or values['frame_tick_slicing'] or values['adaptive_initial_iterations']!=32):raise ValueError('Extended budget requires sync legacy MCTS and initial checkpoint 32')
     if values['mcts_budget_mode'] not in ('fixed','time','adaptive') or type(values['mcts_widening']) is not bool:raise ValueError('Invalid adaptive mode')
-    for name,lo,hi in [('mcts_max_iterations',2,4096),('adaptive_initial_iterations',2,4096),('adaptive_min_action_visits',1,4096),('widening_max_candidates',5,31),('widening_after_visits',1,4096),('widening_min_action_visits',1,4096)]:
+    for name,lo,hi in [('mcts_max_iterations',32 if extended else 2,32768 if extended else 4096),('adaptive_initial_iterations',2,4096),('adaptive_min_action_visits',1,4096),('widening_max_candidates',5,31),('widening_after_visits',1,4096),('widening_min_action_visits',1,4096)]:
         if type(values[name]) is not int or not lo<=values[name]<=hi:raise ValueError('Invalid '+name)
-    for name,lo,hi in [('mcts_time_limit_seconds',.000001,3600),('adaptive_uncertainty_multiplier',0,float('inf')),('adaptive_value_tolerance',0,float('inf')),('adaptive_max_terminal_rate',0,1),('widening_min_spacing',.000001,.125)]:
+    for name,lo,hi in [('mcts_time_limit_seconds',.000001,120 if extended else 3600),('adaptive_uncertainty_multiplier',0,float('inf')),('adaptive_value_tolerance',0,float('inf')),('adaptive_max_terminal_rate',0,1),('widening_min_spacing',.000001,.125)]:
         _number(values[name])
         if not lo<=values[name]<=hi:raise ValueError('Invalid '+name)
     flexible=values['mcts_budget_mode']!='fixed'
@@ -457,7 +463,7 @@ def validate_planning_settings(settings):
         raise ValueError("Invalid AI mode/model path")
     if values["search_leaf"] not in ("reward","heuristic","value") or type(values["inter_step_wait_ticks"]) is not int or not 0<=values["inter_step_wait_ticks"]<=500:
         raise ValueError("Invalid path leaf/wait")
-    for name,low,high in (("mcts_iterations",2,256),("mcts_max_depth",1,8),("mcts_seed",0,2147483647)):
+    for name,low,high in (("mcts_iterations",32 if extended else 2,32768 if extended else 256),("mcts_max_depth",2 if extended else 1,256 if extended else 8),("mcts_seed",0,2147483647)):
         if type(values[name]) is not int or not low<=values[name]<=high:raise ValueError(f"Invalid {name}")
     if values["execution_mode"] not in ("sync","frames","frames_adaptive") or (values["execution_mode"]!="sync" and values["ai_mode"] not in ("mcts","mcts_value")):
         raise ValueError("Frame execution requires MCTS")
@@ -471,7 +477,7 @@ def validate_planning_settings(settings):
     if values["ai_mode"] in ("mcts","mcts_value") and values["mcts_iterations"]<values["candidate_count"]:raise ValueError("MCTS must cover every root candidate")
     _number(values["mcts_point_scale"])
     if values["mcts_point_scale"]<=0:raise ValueError("MCTS point scale must be positive")
-    for name in PLANNING_DEFAULTS.keys() - {"mcts_budget_mode", "mcts_widening", "pair_coverage_iterations", "action_order_policy", "expansion_policy", "tree_policy", "rollout_policy", "mcts_common_chance", "candidate_policy", "candidate_count", "post_drop_steps", "height_bins", "ai_mode", "value_model_path", "search_leaf", "inter_step_wait_ticks", "mcts_iterations", "mcts_max_depth", "mcts_seed", "two_step_exhaustive_reward", "execution_mode", "frame_tick_slicing", "frame_lead_ticks", "frame_max_attempts"}:
+    for name in PLANNING_DEFAULTS.keys() - {"mcts_full_trace", "mcts_extended_budget", "mcts_auto_depth", "mcts_budget_mode", "mcts_widening", "pair_coverage_iterations", "action_order_policy", "expansion_policy", "tree_policy", "rollout_policy", "mcts_common_chance", "candidate_policy", "candidate_count", "post_drop_steps", "height_bins", "ai_mode", "value_model_path", "search_leaf", "inter_step_wait_ticks", "mcts_iterations", "mcts_max_depth", "mcts_seed", "two_step_exhaustive_reward", "execution_mode", "frame_tick_slicing", "frame_lead_ticks", "frame_max_attempts"}:
         _number(values[name])
         if values[name] < 0:
             raise ValueError(f"Negative {name}")

@@ -31,6 +31,8 @@ public class PlanningSettings
     public string action_order_policy="index";
     public string expansion_policy="legacy";
     public int pair_coverage_iterations=0;
+    public bool mcts_extended_budget=false, mcts_auto_depth=false, mcts_full_trace=false;
+    public int auto_depth_min=2, auto_depth_max=8;
     public string mcts_budget_mode="fixed";
     public float mcts_time_limit_seconds=5;
     public int mcts_max_iterations=256,adaptive_initial_iterations=32,adaptive_min_action_visits=4;
@@ -67,7 +69,7 @@ public class PlanningSettings
             (execution_mode!="sync" && ai_mode!="mcts" && ai_mode!="mcts_value")) throw new ArgumentException("Invalid frame execution policy");
         if(ai_mode!="heuristic" && ai_mode!="value" && ai_mode!="two_step" && ai_mode!="mcts" && ai_mode!="mcts_value") throw new ArgumentException("Unknown AI mode");
         if((search_leaf!="reward" && search_leaf!="heuristic" && search_leaf!="value") || inter_step_wait_ticks<0 || inter_step_wait_ticks>500) throw new ArgumentException("Invalid two-step leaf/wait");
-        if(mcts_iterations<2 || mcts_iterations>256 || mcts_max_depth<1 || mcts_max_depth>8 || mcts_seed<0 ||
+        if(mcts_iterations<(mcts_extended_budget?32:2) || mcts_iterations>(mcts_extended_budget?32768:256) || mcts_max_depth<(mcts_extended_budget?2:1) || mcts_max_depth>(mcts_extended_budget?256:8) || mcts_seed<0 ||
             float.IsNaN(mcts_exploration) || float.IsInfinity(mcts_exploration) || mcts_exploration<0 ||
             float.IsNaN(mcts_point_scale) || float.IsInfinity(mcts_point_scale) || mcts_point_scale<=0 ||
             ((ai_mode=="mcts" || ai_mode=="mcts_value") && mcts_iterations<candidate_count)) throw new ArgumentException("Invalid MCTS budget/depth/scale/seed");

@@ -12,6 +12,7 @@ public sealed class SuikaAdaptiveProbe:MonoBehaviour {
     static void Check(bool value,string reason){if(!value)throw new Exception("Adaptive selftest: "+reason);}
     static MctsPlanner.Node Node(int id,int depth){var n=new MctsPlanner.Node(5,id,depth){visits=40,positions=MctsAdaptiveControl.InitialPositions(5)};foreach(var e in n.actions){e.visits=8;e.sum=0;e.sumSquares=0;e.min=e.max=0;e.immediate=new StepPlanner.Candidate {success=true,drop_success=true};}return n;}
     static void SelfTests(){
+        MctsDepthControl.SelfTests();
         var s=new PlanningSettings {ai_mode="mcts",mcts_widening=true};s.Validate();
         var n=Node(0,0);var edge=n.actions[0];var a=MctsAdaptiveControl.TryWiden(n,s,40);Check(a!=null&&n.actions.Length==6&&a.x>0&&a.x<1,"root addition");Check(ReferenceEquals(edge,n.actions[0])&&edge.visits==8,"existing statistics preserved");Check(MctsAdaptiveControl.TryWiden(n,s,41)==null,"new action gets visits before another addition");
         var future=Node(2,2);Check(MctsAdaptiveControl.TryWiden(future,s,40).depth==2,"nonroot addition");

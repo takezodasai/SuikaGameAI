@@ -474,3 +474,6 @@ coarse-root試作は粗5を1手評価し全anchor保持+2中点、root7/将来5�
 
 
 2026-10-25 STEP8-U：旧8-Sは16自然GO/8ペアをhash・元ログ監査、32平均1792.125対64平均2179.375、差+387.25/paired bootstrap95%[-40.25,793.875]、64が6勝2敗で断定せず残4件は再開しない。別Step8U Player、128/深さ4のlegacy/grid9/widening逐次比較と実ゲーム専用スイカ/同時存在/ダブル観測を追加。固定3盤面×2回再現、密集判断3917/3963/4093ms、widen root3追加/非root0。記録ON/OFFの実衝突trace/110点一致、double1回記録。各8手UDP67点/5合体、自然GO0で強さ評価から除外。既存32全state digest一致、旧Player/compat411ファイル不変、Python255/native1029+event parity合格。新9ゲームはユーザー実行。標準変更・学習・commit/pushなし。詳細STEP8U_REPORT.md。
+
+
+2026-10-25 STEP8-W：拡張予算opt-inで32〜32768回/最大120秒/深さ2〜256、同じ木の段階追加とsoft deadline、32未達no drop、各手開始前auto深さ2〜8（既定OFF）を追加。要約出力/深さ別訪問・再訪・rollout記録。旧32と3盤面全state digest一致、adaptive継続prefix/早期128終了/2秒超過1〜10ms確認。auto4→3→3→3とadaptive各4手UDP成功、Python260/native1029+境界テスト合格。手動16は序盤32反復のみ、256/32768完走/120秒負荷/自然GOの強さは未検証。旧Player456ファイル不変、標準変更なし。変更前60656eeをdevelopへpush。詳細STEP8W_REPORT.md。
