@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.EventSystems;  // 必要なら利用
 
 public partial class PlayerController : MonoBehaviour
@@ -141,7 +141,7 @@ public partial class PlayerController : MonoBehaviour
 
         if (dropSound != null)
         {
-            AudioSource.PlayClipAtPoint(dropSound, currentFruit.transform.position);
+            SuikaAudio.PlayEffect(dropSound, currentFruit.transform.position);
         }
 
         // 落下時に果物のRigidbody2Dを取得し、重力を有効にする
@@ -166,6 +166,7 @@ public partial class PlayerController : MonoBehaviour
         }
 
         currentFruit.GetComponent<FruitEvolution>().IsPreview = false;
+        if(ScoreManager.Instance!=null)ScoreManager.Instance.RecordDroppedFruit(currentFruit.GetComponent<FruitEvolution>().fruitType);
         nextDropAllowedAt = Time.timeAsDouble + Mathf.Max(0f, dropCooldownSeconds);
         currentFruit = null;  // 保持中の果物をクリア
         SpawnFruit();         // 次の果物を生成

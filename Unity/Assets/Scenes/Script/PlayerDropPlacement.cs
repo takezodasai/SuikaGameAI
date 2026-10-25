@@ -44,7 +44,7 @@ public partial class PlayerController
         BoxCollider2D left = null, right = null;
         foreach (Collider2D collider in walls)
         {
-            if (!collider.enabled || !collider.CompareTag("Wall")) continue;
+            if (!collider.enabled || collider.gameObject.scene!=heldFruit.scene || !collider.CompareTag("Wall")) continue;
             Bounds bounds = collider.bounds;
             if (bounds.max.y < shape.min.y || bounds.min.y > shape.max.y) continue;
             BoxCollider2D box = collider as BoxCollider2D;
@@ -131,7 +131,7 @@ public partial class PlayerController
                     shape.bounds.max.x <= range.right_wall_inner;
         error = "wall_bounds_overlap";
         foreach (Collider2D wall in FindObjectsOfType<Collider2D>())
-            if (wall.enabled && wall.CompareTag("Wall"))
+            if (wall.enabled && wall.gameObject.scene==currentFruit.scene && wall.CompareTag("Wall"))
             {
                 ColliderDistance2D distance = shape.Distance(wall);
                 if (!distance.isValid || distance.isOverlapped)

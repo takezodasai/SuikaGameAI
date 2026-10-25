@@ -111,7 +111,8 @@ class UnityEnv:
     A new Play session requires a new UnityEnv (different stream_id).
     """
 
-    def __init__(self, server=("127.0.0.1", 7773), local=("127.0.0.1", 7889)):
+    def __init__(self, server=("127.0.0.1", 7773), local=("127.0.0.1", 7889), *, expected_game_id=None):
+        self.expected_game_id = expected_game_id
         self.server = server
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -186,6 +187,8 @@ class UnityEnv:
                 state = parse_state(state)
             except (ValueError, TypeError, KeyError, UnicodeError):
                 continue
+            if self.expected_game_id is not None and state.get("game_id") != self.expected_game_id:
+                continue
             if self.stream_id is None:
                 self.stream_id = state["stream_id"]
             result = state.get("step_result")
@@ -201,6 +204,24 @@ class UnityEnv:
                 self.last_state = state
             return state
         raise TimeoutError("No complete fresh Unity state")
+
+    def get_environment(self, timeout=5.0):
+        """Read-only metadata request. No action ID, Reset, or RNG change."""
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            self._send({"command":"environment"})
+            try:
+                state=self.receive_state(min(.5,max(.001,deadline-time.monotonic())))
+            except TimeoutError:
+                continue
+            metadata=state.get("environment") or {}
+            # JsonUtility serializes a null nested class as a default-valued object.
+            # schema_version alone is therefore not proof of an environment reply.
+            if (metadata.get("schema_version")==1 and metadata.get("unity_version")
+                    and metadata.get("build_guid") and metadata.get("fixed_delta_time",0)>0
+                    and metadata.get("physics_profiles") and metadata.get("boundaries")):
+                return metadata
+        raise TimeoutError("No training metadata; rebuild STEP6 Player with the current Unity source")
 
     def reset(self, timeout=5.0):
         if not self._operation_lock.acquire(blocking=False):
@@ -235,7 +256,17 @@ class UnityEnv:
                 return state
         raise TimeoutError("Unity did not acknowledge reset")
 
-    def step(self, x: float, timeout=None):
+    def plan_step(self, settings=None, timeout=None):
+        """Choose and execute one action from the same live board in Unity.
+
+        settings overrides the Inspector configuration for this decision only.
+        A timeout leaves the outcome unknown; reset before issuing another action.
+        """
+        if settings is not None:
+            validate_planning_settings(settings)
+        return self.step(0.5, timeout, _planning=settings if settings is not None else {})
+
+    def step(self, x: float, timeout=None, *, _planning=None, _path_probe=None):
         """Drop once at normalized X and observe after >=0.5 simulated seconds.
 
         Motion runs at the Inspector speed in fixed game-time updates while the board
@@ -262,10 +293,17 @@ class UnityEnv:
             if baseline["game_over"]:
                 return baseline, 0, True, {"drop_success": False, "status": "game_over", "requested_x": x}
             if timeout is None:
-                deadline = time.monotonic() + self._movement_timeout(baseline, x)
+                deadline = time.monotonic() + (self._movement_timeout(baseline, x) if _planning is None else
+                    max(self._movement_timeout(baseline, 0), self._movement_timeout(baseline, 1))
+                    + 30 + (_planning.get("post_drop_steps", 25) * baseline.get("fixed_delta_time", .02)) / baseline.get("time_scale", 1))
             action_id = self._action_id + 1
             command = dict(command="step", stream_id=baseline["stream_id"],
                            episode_id=baseline["episode_id"], action_id=action_id, x=float(x))
+            if _planning is not None:
+                command["command"] = "plan_step"
+                if _planning:
+                    command["planning_settings"] = dict(PLANNING_DEFAULTS, **_planning)
+            if _path_probe is not None:command.update(_path_probe)
             self._pending_step = command
             retry_at = 0
             while time.monotonic() < deadline:
@@ -283,6 +321,25 @@ class UnityEnv:
                     if state["episode_id"] != baseline["episode_id"]:
                         raise RuntimeError("Episode changed during step; call reset()")
                     continue
+                if info.get("status") == "game_over" and state["game_over"]:
+                    # GO may occur after the baseline but before the command is accepted.
+                    self._pending_step = None
+                    return state, 0, True, dict(info, reward_accounting=state.get("reward_accounting"))
+                planning = state.get("planning") if _planning is not None else None
+                if _planning is not None:
+                    if not isinstance(planning, dict) or planning.get("selected_index", -1) < 0:
+                        raise RuntimeError(f"Unity planning failed: {info.get('status')}; call reset()")
+                    candidates = planning.get("candidates", [])
+                    selected = planning["selected_index"]
+                    if type(selected) is not int or not 0 <= selected < len(candidates):
+                        raise RuntimeError("Invalid selected candidate; call reset()")
+                    x = planning["selected_x"]
+                    _number(x)
+                    if not 0 <= x <= 1 or candidates[selected].get("x") != x:
+                        raise RuntimeError("Invalid planning position; call reset()")
+                    for candidate in candidates:
+                        if "selection_score" not in candidate:
+                            candidate["selection_score"] = json.loads(candidate.get("selection_score_json", "null"))
                 dropped = info.get("drop_success")
                 if info.get("status") != "completed" or (dropped is not True and not (dropped is False and state["game_over"])):
                     raise RuntimeError(f"Unity rejected step: {info.get('status')}; call reset()")
@@ -303,7 +360,7 @@ class UnityEnv:
                     raise RuntimeError("Inconsistent step reply; call reset()")
                 self._action_id = action_id
                 self._pending_step = None
-                return state, info["reward"], state["game_over"], dict(info, reward_accounting=state.get("reward_accounting"))
+                return state, info["reward"], state["game_over"], dict(info, reward_accounting=state.get("reward_accounting"), **({"path_comparison":state.get("path_comparison")} if _path_probe is not None else {}), **({"planning": planning} if planning is not None else {}))
             raise TimeoutError("Step outcome unknown; call reset() before another step")
         finally:
             self._operation_lock.release()
@@ -328,6 +385,21 @@ class UnityEnv:
             raise ValueError("drop_cooldown_remaining must be nonnegative")
         return max(5.0, (max(distance / speed, wait) + 0.5 + 2 * state.get("fixed_delta_time", 0.02)) / scale + 3.0)
 
+    def request_presentation(self, kind, enabled, revision):
+        """Send desired state without receiving: safe beside the sole collector receiver.
+
+        Confirmation is state[kind+'_revision']; caller retries the same revision until ack.
+        Independent of episode/action IDs and survives reset. Requires a fresh known stream.
+        """
+        if kind not in ("audio", "video") or type(enabled) is not bool or type(revision) is not int or not 0 < revision < 2**63:
+            raise ValueError("Invalid presentation control")
+        state = self.last_state
+        if not state or not state.get("game_id"):
+            return False
+        self._send(dict(command="presentation", stream_id=state["stream_id"], game_id=state["game_id"],
+            control_kind=kind, enabled=enabled, control_revision=revision))
+        return True
+
     def close(self):
         self.socket.close()
 
@@ -336,3 +408,74 @@ class UnityEnv:
 
     def __exit__(self, *args):
         self.close()
+
+
+PLANNING_DEFAULTS = dict(candidate_policy="grid", candidate_count=5, post_drop_steps=25, height_bins=9,
+    score_scale=55.0, weight_height=0.0, weight_danger=0.0, weight_roughness=.2,
+    danger_band_fraction=.15, uncontacted_risk_weight=.5, planning_budget_ms=0.0, ai_mode="heuristic", value_model_path="", search_leaf="reward", inter_step_wait_ticks=0, mcts_iterations=32, mcts_max_depth=3,
+    pair_coverage_iterations=0, action_order_policy="index", expansion_policy="legacy", tree_policy="chance", rollout_policy="random", rollout_random_probability=.5, mcts_common_chance=False, mcts_seed=8191, mcts_exploration=2**.5, mcts_point_scale=55., two_step_exhaustive_reward=False, execution_mode="sync", frame_tick_slicing=False, frame_budget_ms=6., frame_timeout_seconds=24., frame_lead_ticks=150, frame_max_attempts=2)
+PLANNING_DEFAULTS.update(mcts_budget_mode="fixed",mcts_time_limit_seconds=5.,mcts_max_iterations=256,adaptive_initial_iterations=32,adaptive_min_action_visits=4,adaptive_uncertainty_multiplier=1.,adaptive_value_tolerance=3.,adaptive_max_terminal_rate=.1,mcts_widening=False,widening_max_candidates=9,widening_after_visits=10,widening_min_action_visits=1,widening_min_spacing=.03125)
+
+
+
+def validate_planning_settings(settings):
+    if not isinstance(settings, dict) or set(settings) - PLANNING_DEFAULTS.keys():
+        raise ValueError("Unknown planning setting")
+    values = dict(PLANNING_DEFAULTS, **settings)
+    if values['mcts_budget_mode'] not in ('fixed','time','adaptive') or type(values['mcts_widening']) is not bool:raise ValueError('Invalid adaptive mode')
+    for name,lo,hi in [('mcts_max_iterations',2,4096),('adaptive_initial_iterations',2,4096),('adaptive_min_action_visits',1,4096),('widening_max_candidates',5,31),('widening_after_visits',1,4096),('widening_min_action_visits',1,4096)]:
+        if type(values[name]) is not int or not lo<=values[name]<=hi:raise ValueError('Invalid '+name)
+    for name,lo,hi in [('mcts_time_limit_seconds',.000001,3600),('adaptive_uncertainty_multiplier',0,float('inf')),('adaptive_value_tolerance',0,float('inf')),('adaptive_max_terminal_rate',0,1),('widening_min_spacing',.000001,.125)]:
+        _number(values[name])
+        if not lo<=values[name]<=hi:raise ValueError('Invalid '+name)
+    flexible=values['mcts_budget_mode']!='fixed'
+    if flexible or values['mcts_widening']:
+        if values['ai_mode']!='mcts' or values['execution_mode']!='sync' or values['frame_tick_slicing'] or values['candidate_policy']!='grid' or values['tree_policy']!='chance' or values['rollout_policy']!='random' or values['expansion_policy']!='legacy' or values['action_order_policy']!='index' or values['pair_coverage_iterations']!=0 or values['mcts_common_chance'] or values['planning_budget_ms']!=0:raise ValueError('Adaptive prototype requires sync legacy chance/grid/random MCTS')
+    if flexible and (values['mcts_max_iterations']<values['candidate_count'] or not values['candidate_count']<=values['adaptive_initial_iterations']<=values['mcts_max_iterations']):raise ValueError('Invalid adaptive stage/cap')
+    if values['mcts_widening'] and values['candidate_count']!=5:raise ValueError('Widening starts with five anchors')
+    if type(values["pair_coverage_iterations"]) is not int or not 0<=values["pair_coverage_iterations"]<=25:raise ValueError("Invalid pair coverage budget")
+    if values["pair_coverage_iterations"] and (type(values["mcts_iterations"]) is not int or values["pair_coverage_iterations"]>values["mcts_iterations"]):raise ValueError("Coverage exceeds search budget")
+    if values["pair_coverage_iterations"] and (values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"] or values["candidate_policy"]!="grid" or values["candidate_count"]!=5 or values["mcts_max_depth"]<2 or values["tree_policy"]!="chance" or values["rollout_policy"]!="random" or values["action_order_policy"]!="index" or values["expansion_policy"]!="legacy"):raise ValueError("Pair coverage requires sync five-grid legacy chance/random MCTS")
+    if values["action_order_policy"] not in ("index","shuffle"):raise ValueError("Invalid action order policy")
+    if values["action_order_policy"]!="index" and (values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"] or values["tree_policy"]!="chance" or values["candidate_policy"]!="grid" or values["rollout_policy"]!="random" or values["expansion_policy"]!="legacy"):raise ValueError("Shuffle requires sync chance grid MCTS with legacy expansion and random rollout")
+    if values["expansion_policy"] not in ("legacy","chance_decision"):raise ValueError("Invalid expansion policy")
+    if values["expansion_policy"]!="legacy" and (values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"] or values["tree_policy"]!="chance" or values["candidate_policy"]!="grid" or values["rollout_policy"]!="random"):raise ValueError("Chance-decision requires sync chance-tree grid MCTS with random rollout")
+    if values["tree_policy"] not in ("chance","public_open_loop"):raise ValueError("Invalid tree policy")
+    if values["tree_policy"]!="chance" and (values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"] or values["candidate_policy"]!="grid" or values["rollout_policy"]!="random"):raise ValueError("Open-loop requires sync grid MCTS with random rollout")
+    if values["rollout_policy"] not in ("random","guided"):raise ValueError("Invalid rollout policy")
+    _number(values["rollout_random_probability"])
+    if not 0<=values["rollout_random_probability"]<=1 or type(values["mcts_common_chance"]) is not bool:raise ValueError("Invalid rollout probability/chance flag")
+    if (values["rollout_policy"]!="random" or values["mcts_common_chance"]) and (values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"]):raise ValueError("Guided rollout requires synchronous MCTS")
+    if values["candidate_policy"] not in ("grid","board-five","coarse-root"):raise ValueError("Unknown candidate policy")
+    if values["candidate_policy"]=="coarse-root" and (values["candidate_count"]!=7 or values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"] or values["tree_policy"]!="chance" or values["rollout_policy"]!="random" or values["expansion_policy"]!="legacy" or values["action_order_policy"]!="index"):raise ValueError("Coarse-root requires sync legacy grid-future MCTS with seven root actions")
+    if values["candidate_policy"]=="board-five" and (values["candidate_count"]!=5 or values["ai_mode"]!="mcts" or values["execution_mode"]!="sync" or values["frame_tick_slicing"]):
+        raise ValueError("Board-five requires synchronous MCTS with five candidates")
+    for name, low, high in (("candidate_count", 2, 31), ("post_drop_steps", 1, 150), ("height_bins", 2, 128)):
+        if type(values[name]) is not int or not low <= values[name] <= high:
+            raise ValueError(f"Invalid {name}")
+    if values["ai_mode"] not in ("heuristic","value","two_step","mcts","mcts_value") or not isinstance(values["value_model_path"],str):
+        raise ValueError("Invalid AI mode/model path")
+    if values["search_leaf"] not in ("reward","heuristic","value") or type(values["inter_step_wait_ticks"]) is not int or not 0<=values["inter_step_wait_ticks"]<=500:
+        raise ValueError("Invalid path leaf/wait")
+    for name,low,high in (("mcts_iterations",2,256),("mcts_max_depth",1,8),("mcts_seed",0,2147483647)):
+        if type(values[name]) is not int or not low<=values[name]<=high:raise ValueError(f"Invalid {name}")
+    if values["execution_mode"] not in ("sync","frames","frames_adaptive") or (values["execution_mode"]!="sync" and values["ai_mode"] not in ("mcts","mcts_value")):
+        raise ValueError("Frame execution requires MCTS")
+    for name,low,high in (("frame_lead_ticks",10,500),("frame_max_attempts",1,3)):
+        if type(values[name]) is not int or not low<=values[name]<=high:raise ValueError(f"Invalid {name}")
+    for name,low,high in (("frame_budget_ms",1,30),("frame_timeout_seconds",1,25)):
+        _number(values[name])
+        if not low<=values[name]<=high:raise ValueError(f"Invalid {name}")
+    if type(values["frame_tick_slicing"]) is not bool:raise ValueError("Invalid tick slicing flag")
+    if type(values["two_step_exhaustive_reward"]) is not bool:raise ValueError("Invalid exhaustive flag")
+    if values["ai_mode"] in ("mcts","mcts_value") and values["mcts_iterations"]<values["candidate_count"]:raise ValueError("MCTS must cover every root candidate")
+    _number(values["mcts_point_scale"])
+    if values["mcts_point_scale"]<=0:raise ValueError("MCTS point scale must be positive")
+    for name in PLANNING_DEFAULTS.keys() - {"mcts_budget_mode", "mcts_widening", "pair_coverage_iterations", "action_order_policy", "expansion_policy", "tree_policy", "rollout_policy", "mcts_common_chance", "candidate_policy", "candidate_count", "post_drop_steps", "height_bins", "ai_mode", "value_model_path", "search_leaf", "inter_step_wait_ticks", "mcts_iterations", "mcts_max_depth", "mcts_seed", "two_step_exhaustive_reward", "execution_mode", "frame_tick_slicing", "frame_lead_ticks", "frame_max_attempts"}:
+        _number(values[name])
+        if values[name] < 0:
+            raise ValueError(f"Negative {name}")
+    if values["score_scale"] <= 0 or not 0 < values["danger_band_fraction"] <= 1 or values["uncontacted_risk_weight"] > 1:
+        raise ValueError("Invalid planning normalization")
+    values["weight_height"] = values["weight_danger"] = 0.0  # legacy accepted, never re-enabled
+    return values

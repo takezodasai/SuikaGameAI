@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections;
@@ -91,6 +91,7 @@ public class GameManager : MonoBehaviour
 
     public void ResetGame(string requestId)
     {
+        udpcomm.CancelFrameSearch();
         udpcomm.CaptureEpisodeRewardSummary(); // Preserve the old episode, including any open reward interval.
         StopAllCoroutines();
         // Deactivate before deferred Destroy, so no old physics objects enter the new state.

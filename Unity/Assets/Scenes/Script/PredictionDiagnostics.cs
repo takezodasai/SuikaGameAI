@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.LowLevel;
@@ -10,7 +10,7 @@ public static class PredictionDiagnostics
     [Serializable] public class FruitState
     {
         public string id; public long observation_id; public int type;
-        public bool preview, merging, sleeping, has_collided; public Vector2 position, velocity, center_of_mass;
+        public bool preview, merging, sleeping, has_collided,tag_eligible; public Vector2 position, velocity, center_of_mass,transform_position;
         public float angle, angular_velocity, mass, inertia, friction, bounce;
         public Contact[] contacts;
     }
@@ -78,6 +78,7 @@ public static class PredictionDiagnostics
                 var material = shape != null ? shape.sharedMaterial : null;
                 values.Add(new FruitState { id=pair.Value, observation_id=fruit.Simulation==null?fruit.ObservationId:0,
                     type=fruit.fruitType, preview=fruit.IsPreview, merging=fruit.IsMerging, has_collided=fruit.HasCollided,
+                    tag_eligible=fruit.CompareTag("Fruit"),transform_position=fruit.transform.position,
                     sleeping=body!=null && body.IsSleeping(), position=body!=null?body.position:(Vector2)fruit.transform.position,
                     velocity=body!=null?body.velocity:Vector2.zero, angle=body!=null?body.rotation:fruit.transform.eulerAngles.z,
                     angular_velocity=body!=null?body.angularVelocity:0, mass=body!=null?body.mass:0,
@@ -95,12 +96,16 @@ public static class PredictionDiagnostics
     public static Recorder Live { get; private set; }
     static GameManager manager;
     static bool installed;
-    public static void Begin(PlayerController player, GameManager game)
+    static bool aliasesOnly;
+    public static void BeginAliases(PlayerController player,GameManager game)
+    { Begin(player,game,true); }
+    public static void Begin(PlayerController player, GameManager game,bool onlyAliases=false)
     {
-        Stop(); manager=game; Live=new Recorder(game.GameOverHeight);
+        Stop(); aliasesOnly=onlyAliases;manager=game; Live=new Recorder(game.GameOverHeight);
         foreach (var fruit in UnityEngine.Object.FindObjectsOfType<FruitEvolution>())
             if (fruit.Simulation==null && (!fruit.IsPreview || fruit.gameObject==player.currentFruit))
                 Live.Watch(fruit,"f"+fruit.ObservationId);
+        if(onlyAliases)return;
         Live.Capture(ScoreManager.Instance.GetScore(),game.isGameOver);
         if (!installed)
         {
@@ -125,7 +130,7 @@ public static class PredictionDiagnostics
         }
         return false;
     }
-    static void AfterPhysics() { if (Live!=null && manager!=null) Live.Capture(ScoreManager.Instance.GetScore(),manager.isGameOver); }
+    static void AfterPhysics() { if (!aliasesOnly && Live!=null && manager!=null) Live.Capture(ScoreManager.Instance.GetScore(),manager.isGameOver); }
     public static void Stop() { if(Live!=null)Live.recording=false; Live=null;manager=null; }
     public static Recorder For(FruitEvolution fruit) { return fruit.Simulation!=null?fruit.Simulation.Trace:Live; }
     public static void Collision(FruitEvolution fruit, Collision2D collision)

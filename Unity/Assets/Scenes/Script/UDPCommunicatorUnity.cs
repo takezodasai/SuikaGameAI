@@ -1,4 +1,4 @@
-using UnityEngine;                               // Unityエンジンの基本クラスを利用
+﻿using UnityEngine;                               // Unityエンジンの基本クラスを利用
 using System.Net;                                // IPアドレス等のネットワーク機能を利用
 using System.Net.Sockets;                        // ソケット通信のクラスを利用
 using System.Text;                               // 文字列エンコード用
@@ -29,6 +29,12 @@ public partial class UDPCommunicatorUnity : MonoBehaviour  // UDP通信を管理
 
     void Start()                                   // Start()はゲーム開始時に1回呼ばれる
     {
+        if(SuikaWorkerOptions.Worker)
+        {
+            listenPort=SuikaWorkerOptions.ListenPort;pythonPort=SuikaWorkerOptions.PythonPort;
+            pythonIP="127.0.0.1";RemoteControl=true;
+        }
+        SuikaVideo.StartIfConfigured(gameObject);
         udpListener = new UdpClient(listenPort);    // 指定したポートでUDPリスナーを初期化
         udpListener.Client.ReceiveTimeout = 1000;   // 受信タイムアウトを1秒に設定
         udpSender = new UdpClient();                // UDP送信用クライアントを初期化
@@ -41,6 +47,7 @@ public partial class UDPCommunicatorUnity : MonoBehaviour  // UDP通信を管理
 
     void Update()                                  // Update()は毎フレーム呼ばれる
     {
+        UpdateFrameSearch();
         if (udpListener != null && udpListener.Available > 0)            // 受信バッファにデータがあるか確認
         {
             try                                   // 例外処理ブロック開始
@@ -305,6 +312,7 @@ public partial class UDPCommunicatorUnity : MonoBehaviour  // UDP通信を管理
 
     string CaptureScreen()
     {
+        if(SystemInfo.graphicsDeviceType==UnityEngine.Rendering.GraphicsDeviceType.Null) return "";
         int targetWidth = Screen.width / 32;  // 例: 1/4 の解像度
         int targetHeight = Screen.height / 32;
 
@@ -370,6 +378,7 @@ public partial class UDPCommunicatorUnity : MonoBehaviour  // UDP通信を管理
 
     public void StopCommunication()
     {
+        CancelFrameSearch();
         if (udpListener != null)
         {
             udpListener.Close();

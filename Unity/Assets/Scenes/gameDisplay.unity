@@ -255,7 +255,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3bac08d2cbe67c0428a85b75474ce832, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gameOverScreenRatio: 0.862
+  gameOverScreenRatio: 0.83
   gameOverText: {fileID: 0}
   scoreText: {fileID: 447515207}
   udpcomm: {fileID: 783290989}
@@ -1021,6 +1021,7 @@ MonoBehaviour:
   mainCamera: {fileID: 1501276639}
   playerController: {fileID: 697163047}
   gameManager: {fileID: 34684346}
+  planningFloor: {fileID: 1113106520}
 --- !u!1 &1006300701
 GameObject:
   m_ObjectHideFlags: 0
@@ -1787,7 +1788,7 @@ PrefabInstance:
       objectReference: {fileID: 447515207}
     - target: {fileID: 3930581939689455362, guid: bf58e783ee6b0d74b9e13123ecb6bb6e, type: 3}
       propertyPath: gameOverScreenRatio
-      value: 0.862
+      value: 0.83
       objectReference: {fileID: 0}
     - target: {fileID: 6075163612929061412, guid: bf58e783ee6b0d74b9e13123ecb6bb6e, type: 3}
       propertyPath: m_LocalPosition.x

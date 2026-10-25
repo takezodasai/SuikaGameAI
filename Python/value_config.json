@@ -1,0 +1,13 @@
+{
+  "epochs": 30,
+  "lr": 0.001,
+  "batch_size": 128,
+  "optimizer": "adamw",
+  "loss": "mse",
+  "precision": "fp32",
+  "threads": 1,
+  "seed": 2026,
+  "next_mask_probability": 0.5,
+  "save_seconds": 300,
+  "early_stop_patience": 20
+}

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class FruitEvolution : MonoBehaviour
 {
@@ -51,6 +51,10 @@ public class FruitEvolution : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        using(MctsPerformance.Measure("collision_callbacks")) CollisionCore(collision);
+    }
+    void CollisionCore(Collision2D collision)
+    {
         if (IsPreview) return; // Held/NEXT trigger contacts must never arm this fruit.
         HasCollided = true;
         PredictionDiagnostics.Collision(this, collision);
@@ -68,13 +72,14 @@ public class FruitEvolution : MonoBehaviour
                 // 合体時の効果音
                 if (Simulation == null && mergeSound != null)
                 {
-                    AudioSource.PlayClipAtPoint(mergeSound, mergePosition);
+                    SuikaAudio.PlayEffect(mergeSound, mergePosition);
                 }
 
                 // スイカ同士の場合は消滅（得点加算はしない）
                 if (fruitType == 10)
                 {
                     PredictionDiagnostics.Merge(this, otherFruit, null);
+                    if(Simulation==null && ScoreManager.Instance!=null)ScoreManager.Instance.RecordMerge(fruitType,-1);
                     RemoveFruit(otherFruit);
                     RemoveFruit(this);
                     if (Simulation == null) udpcomm.SendObservationsWaterMelon();
@@ -120,6 +125,7 @@ public class FruitEvolution : MonoBehaviour
                     }
 
                     PredictionDiagnostics.Merge(this, otherFruit, fe);
+                    if(Simulation==null && ScoreManager.Instance!=null)ScoreManager.Instance.RecordMerge(fruitType,nextType);
 
                     // 得点加算：進化する前の fruitType を使ってスコアを加算（例：サクランボ→イチゴの場合は fruitType=0 なので 1点）
                     if (Simulation != null) Simulation.AddScore(fruitType);

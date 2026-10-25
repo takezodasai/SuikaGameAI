@@ -8,6 +8,17 @@ public class ScoreManager : MonoBehaviour
     public int[] evolutionScores = new int[] { 1, 3, 6, 10, 15, 21, 28, 36, 45, 55 };
 
     public int totalScore = 0;
+    // Observation-only episode counters; prediction worlds never call these.
+    public int EpisodeMergeCount {get;private set;}
+    public int EpisodeMaxFruitType {get;private set;} = -1;
+    public readonly SuikaEpisodeEvents EpisodeEvents = new SuikaEpisodeEvents();
+    public void RecordDroppedFruit(int type) {EpisodeMaxFruitType=Mathf.Max(EpisodeMaxFruitType,type);EpisodeEvents.Drop(type,totalScore,Time.fixedTimeAsDouble);}
+    public void RecordMerge(int fromType,int createdType)
+    {EpisodeMergeCount++;EpisodeMaxFruitType=Mathf.Max(EpisodeMaxFruitType,Mathf.Max(fromType,createdType));
+        // Existing FruitEvolution calls RecordMerge just BEFORE AddScoreForEvolution.
+        int after=totalScore+(fromType>=0&&fromType<evolutionScores.Length?evolutionScores[fromType]:0);
+        EpisodeEvents.Merge(fromType,createdType,after,Time.fixedTimeAsDouble);
+    }
 
     private TextMeshProUGUI scoreText; // 現在のスコアを表示するTextMeshProUGUI
     private TextMeshProUGUI maxScoreText; // 最大スコアを表示するTextMeshProUGUI
@@ -20,6 +31,7 @@ public class ScoreManager : MonoBehaviour
             return;
         }
         Instance = this;
+        EpisodeEvents.Enabled=SuikaWorkerOptions.EventsEnabled;
         LoadMaxScore(); // 最大スコアをロード
     }
 
@@ -97,6 +109,7 @@ public class ScoreManager : MonoBehaviour
     public void ResetScore()
     {
         totalScore = 0;
+        EpisodeMergeCount=0;EpisodeMaxFruitType=-1;EpisodeEvents.Reset();
         UpdateScoreUI();
     }
 }

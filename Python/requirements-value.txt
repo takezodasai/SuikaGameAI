@@ -1,0 +1,5 @@
+# CPU-only offline training, within pyproject dependency ranges.
+--extra-index-url https://download.pytorch.org/whl/cpu
+numpy==2.2.3
+torch==2.6.0+cpu
+matplotlib==3.11.2
