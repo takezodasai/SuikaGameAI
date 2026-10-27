@@ -17,14 +17,26 @@ public static class SuikaWorkerBuild
     public static void BuildPlacement() {BuildAt("Builds/Step8U/SuikaGameAI.exe");}
     [MenuItem("Tools/Suika/Build STEP8W Budget Player")]
     public static void BuildExtended() {BuildAt("Builds/Step8W/SuikaGameAI.exe");}
+    [MenuItem("Tools/Suika/Build STEP8X Allocation Player")]
+    public static void BuildAllocation() {BuildAt("Builds/Step8X/SuikaGameAI.exe");}
+    [MenuItem("Tools/Suika/Build STEP8AA Importance Player")]
+    public static void BuildImportance() {BuildAt("Builds/Step8AA_02/SuikaGameAI.exe");}
+    [MenuItem("Tools/Suika/Build STEP8AB Lifetime Player")]
+    public static void BuildLifetime() {BuildAt("Builds/Step8AB_02/SuikaGameAI.exe");}
+    public static void BuildOvernight() {
+        if(File.Exists("Builds/Step8AE/SuikaGameAI.exe"))throw new InvalidOperationException("STEP8AE destination exists; preserve the existing Player");
+        BuildAt("Builds/Step8AE/SuikaGameAI.exe");
+    }
     public static bool IsProtectedDestination(string destination) {
         string project=Directory.GetParent(Application.dataPath).FullName;
+        if(File.Exists(Path.Combine(project,"Builds/Step8X/SuikaGameAI.exe"))&&string.Equals(Path.GetFullPath(destination),Path.GetFullPath(Path.Combine(project,"Builds/Step8X/SuikaGameAI.exe")),StringComparison.OrdinalIgnoreCase))return true;
+        if(File.Exists(Path.Combine(project,"Builds/Step8W/SuikaGameAI.exe"))&&string.Equals(Path.GetFullPath(destination),Path.GetFullPath(Path.Combine(project,"Builds/Step8W/SuikaGameAI.exe")),StringComparison.OrdinalIgnoreCase))return true;
         if(File.Exists(Path.Combine(project,"Builds/Step8U/SuikaGameAI.exe"))&&string.Equals(Path.GetFullPath(destination),Path.GetFullPath(Path.Combine(project,"Builds/Step8U/SuikaGameAI.exe")),StringComparison.OrdinalIgnoreCase))return true;
         return File.Exists(Path.GetFullPath(Path.Combine(project,"../Python/compat/step8s_20261024/version_manifest.json"))) &&
             (string.Equals(Path.GetFullPath(destination),Path.GetFullPath(Path.Combine(project,"Builds/Step6/SuikaGameAI.exe")),StringComparison.OrdinalIgnoreCase) || (File.Exists(Path.Combine(project,"Builds/Step8T/SuikaGameAI.exe")) && string.Equals(Path.GetFullPath(destination),Path.GetFullPath(Path.Combine(project,"Builds/Step8T/SuikaGameAI.exe")),StringComparison.OrdinalIgnoreCase)));
     }
     public static void CheckProtectedBuildGuard() {
-        if(!IsProtectedDestination("Builds/Step6/SuikaGameAI.exe")||IsProtectedDestination("Builds/Step8W/SuikaGameAI.exe"))throw new InvalidOperationException("Protected Player guard failed");
+        if(!IsProtectedDestination("Builds/Step6/SuikaGameAI.exe")||!IsProtectedDestination("Builds/Step8X/SuikaGameAI.exe")||IsProtectedDestination("Builds/Step8AA/SuikaGameAI.exe"))throw new InvalidOperationException("Protected Player guard failed");
         Debug.Log("STEP8S PROTECTED BUILD GUARD OK");
     }
     static void BuildAt(string destination)

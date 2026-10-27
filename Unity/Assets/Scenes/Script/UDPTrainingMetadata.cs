@@ -58,6 +58,8 @@ public partial class UDPCommunicatorUnity
     }
     public partial class Observation
     {
+        public string environment_request_id;public bool metadata_request_ids_supported=true;public bool collection_budget_supported=true;public int collection_time_limit_seconds=240;
+        public int prediction_scenes,prediction_pending_unloads;
         public int metadata_schema_version=1, merging_fruit_count;
         public bool episode_statistics_known;
         public int episode_merge_count,episode_max_fruit_type;
@@ -176,6 +178,7 @@ public partial class UDPCommunicatorUnity
     }
     void FillTrainingSnapshot(Observation observation)
     {
+        observation.prediction_scenes=PredictionLifecycle.RetainedScenes;observation.prediction_pending_unloads=PredictionLifecycle.Pending;
         observation.training_metadata_known=trainingMetadataEnabled;
         observation.snapshot_fixed_time=Time.fixedTimeAsDouble;observation.snapshot_game_time=Time.timeAsDouble;
         observation.snapshot_realtime=Time.realtimeSinceStartupAsDouble;

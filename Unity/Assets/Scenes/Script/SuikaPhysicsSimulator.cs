@@ -6,7 +6,7 @@ using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
 // Main-thread, synchronous prediction. Never simulates the default physics scene.
-// One instance owns one local world; Dispose disables it before asynchronous scene unload.
+// Each owner gets a fresh native world; disposal completes before the next iteration.
 public sealed partial class SuikaPhysicsSimulator : IDisposable
 {
     [Serializable] public class Result
@@ -54,7 +54,8 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
     readonly float gameOverHeight;
     int score, merges;
     long generatedId = -1;
-    bool disposed;
+    bool disposed,simulating;
+    bool SimulateNative(float dt) {if(disposed||simulating)throw new InvalidOperationException("Invalid prediction simulation lifetime");simulating=true;try{return physics.Simulate(dt);}finally{simulating=false;}}
 
     SuikaPhysicsSimulator(GameManager manager)
     {
@@ -65,6 +66,7 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
         gameOverHeight = manager.GameOverHeight;
         scene = SceneManager.CreateScene("SuikaPrediction_" + Guid.NewGuid().ToString("N"),
             new CreateSceneParameters(LocalPhysicsMode.Physics2D));
+        PredictionLifecycle.Register(scene);
         physics = scene.GetPhysicsScene2D();
         staging = new GameObject("Inactive prediction staging");
         staging.SetActive(false);
@@ -450,7 +452,7 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
             else { post++; }
             using(MctsPerformance.Measure("sync_transforms")) Physics2D.SyncTransforms();
             using(MctsPerformance.Measure("native_physics"))
-                if (!physics.Simulate(dt)) throw new InvalidOperationException("Local PhysicsScene2D.Simulate failed");
+                if (!SimulateNative(dt)) throw new InvalidOperationException("Local PhysicsScene2D.Simulate failed");
             int gain=score-tickScore;
             if(dropped) result.post_drop_reward+=gain;
             else if(movedThisTick) result.movement_reward+=gain;
@@ -528,11 +530,19 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
         using(MctsPerformance.Measure("cleanup_schedule")) {
 
         if (disposed) return;
+        if(simulating)throw new InvalidOperationException("Prediction disposal during physics callbacks is forbidden");
         disposed = true;
         var timer = Stopwatch.StartNew();
         foreach (var obj in owned) if (obj != null) obj.SetActive(false);
-        foreach (var material in materials) if (material != null) Object.Destroy(material);
-        if (scene.IsValid()) SceneManager.UnloadSceneAsync(scene);
+        if(PredictionLifecycle.Legacy) {
+            foreach (var material in materials) if (material != null) Object.Destroy(material);
+            PredictionLifecycle.Release(scene);
+        } else {
+            PredictionLifecycle.Release(scene);
+            // Only freshly allocated prediction materials: never shared prefab/live assets.
+            foreach (var material in materials) if (material != null) Object.DestroyImmediate(material);
+            owned.Clear();materials.Clear();sourceCopies.Clear();pendingRemoval.Clear();ids.Clear();goCandidates.Clear();Trace=null;
+        }
         cleanupMs = timer.Elapsed.TotalMilliseconds;
 
         }

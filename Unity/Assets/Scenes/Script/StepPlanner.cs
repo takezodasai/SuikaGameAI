@@ -31,6 +31,7 @@ public class PlanningSettings
     public string action_order_policy="index";
     public string expansion_policy="legacy";
     public int pair_coverage_iterations=0;
+    public bool mcts_collection_budget=false; // Explicit offline collection opt-in, old defaults unchanged.
     public bool mcts_extended_budget=false, mcts_auto_depth=false, mcts_full_trace=false;
     public int auto_depth_min=2, auto_depth_max=8;
     public string mcts_budget_mode="fixed";
@@ -38,6 +39,7 @@ public class PlanningSettings
     public int mcts_max_iterations=256,adaptive_initial_iterations=32,adaptive_min_action_visits=4;
     public float adaptive_uncertainty_multiplier=1,adaptive_value_tolerance=3,adaptive_max_terminal_rate=.1f;
     public bool mcts_widening=false;
+    public string widening_policy="legacy"; // budgeted is opt-in; legacy unchanged.
     public int widening_max_candidates=9,widening_after_visits=10,widening_min_action_visits=1;
     public float widening_min_spacing=.03125f;
     public PlanningSettings Freeze()

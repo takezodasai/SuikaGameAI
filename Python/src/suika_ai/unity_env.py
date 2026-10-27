@@ -206,13 +206,33 @@ class UnityEnv:
         raise TimeoutError("No complete fresh Unity state")
 
     def get_environment(self, timeout=5.0):
-        """Read-only metadata request. No action ID, Reset, or RNG change."""
+        """One read-only metadata request at a time; no Reset or RNG change."""
+        lock = getattr(self, "_operation_lock", None)
+        if lock is None:
+            self._operation_lock = lock = threading.Lock()
+        if not lock.acquire(blocking=False):
+            raise RuntimeError("Another Unity operation/metadata request is in progress")
+        try:
+            return self._get_environment(timeout)
+        finally:
+            lock.release()
+
+    def _get_environment(self, timeout):
         deadline=time.monotonic()+timeout
+        retry_at = 0.0
+        request_id = uuid.uuid4().hex
+        request = {"command":"environment", "request_id":request_id}
         while time.monotonic()<deadline:
-            self._send({"command":"environment"})
+            # Ordinary observations/cached step replies are not request acknowledgments.
+            # Do not turn a burst of such packets into another command flood.
+            if time.monotonic() >= retry_at:
+                self._send(request)
+                retry_at = time.monotonic() + .5
             try:
                 state=self.receive_state(min(.5,max(.001,deadline-time.monotonic())))
             except TimeoutError:
+                continue
+            if state.get("metadata_request_ids_supported") and state.get("environment_request_id") != request_id:
                 continue
             metadata=state.get("environment") or {}
             # JsonUtility serializes a null nested class as a default-valued object.
@@ -221,7 +241,8 @@ class UnityEnv:
                     and metadata.get("build_guid") and metadata.get("fixed_delta_time",0)>0
                     and metadata.get("physics_profiles") and metadata.get("boundaries")):
                 return metadata
-        raise TimeoutError("No training metadata; rebuild STEP6 Player with the current Unity source")
+        raise TimeoutError("No complete training metadata response within the timeout; "
+                           "check Unity responsiveness/queued commands and Player metadata support")
 
     def reset(self, timeout=5.0):
         if not self._operation_lock.acquire(blocking=False):
@@ -306,10 +327,26 @@ class UnityEnv:
             if _path_probe is not None:command.update(_path_probe)
             self._pending_step = command
             retry_at = 0
+            retry_interval = .25
+            send_attempts = 0
+            # Unity sync planning blocks its one-command-per-Update receiver. With
+            # 120s thinking, constant 4Hz retries queue ~480 identical commands and
+            # starve the metadata request made after completion. Preserve legacy
+            # retry behavior, but back off long-budget sync plan_step retries.
+            backoff = bool(_planning and _planning.get("mcts_extended_budget")
+                           and _planning.get("execution_mode", "sync") == "sync")
             while time.monotonic() < deadline:
                 if time.monotonic() >= retry_at:
                     self._send(command)
-                    retry_at = time.monotonic() + 0.25
+                    send_attempts += 1
+                    if backoff:
+                        # Three early sends cover initial packet loss. Further retries
+                        # wait the declared thinking budget: even 8s retries build a
+                        # queue that can take >5s to drain after a 120s sync search.
+                        retry_interval = (.25 if send_attempts == 1 else .5
+                                          if send_attempts == 2 else
+                                          max(8.0, _planning.get("mcts_time_limit_seconds", 0)))
+                    retry_at = time.monotonic() + retry_interval
                 try:
                     state = self.receive_state(min(0.25, max(0.001, deadline - time.monotonic())),
                                                step_action_id=action_id,
@@ -414,7 +451,8 @@ PLANNING_DEFAULTS = dict(candidate_policy="grid", candidate_count=5, post_drop_s
     score_scale=55.0, weight_height=0.0, weight_danger=0.0, weight_roughness=.2,
     danger_band_fraction=.15, uncontacted_risk_weight=.5, planning_budget_ms=0.0, ai_mode="heuristic", value_model_path="", search_leaf="reward", inter_step_wait_ticks=0, mcts_iterations=32, mcts_max_depth=3,
     pair_coverage_iterations=0, action_order_policy="index", expansion_policy="legacy", tree_policy="chance", rollout_policy="random", rollout_random_probability=.5, mcts_common_chance=False, mcts_seed=8191, mcts_exploration=2**.5, mcts_point_scale=55., two_step_exhaustive_reward=False, execution_mode="sync", frame_tick_slicing=False, frame_budget_ms=6., frame_timeout_seconds=24., frame_lead_ticks=150, frame_max_attempts=2)
-PLANNING_DEFAULTS.update(mcts_extended_budget=False,mcts_auto_depth=False,mcts_full_trace=False,auto_depth_min=2,auto_depth_max=8)
+PLANNING_DEFAULTS.update(widening_policy="legacy")
+PLANNING_DEFAULTS.update(mcts_collection_budget=False,mcts_extended_budget=False,mcts_auto_depth=False,mcts_full_trace=False,auto_depth_min=2,auto_depth_max=8)
 PLANNING_DEFAULTS.update(mcts_budget_mode="fixed",mcts_time_limit_seconds=5.,mcts_max_iterations=256,adaptive_initial_iterations=32,adaptive_min_action_visits=4,adaptive_uncertainty_multiplier=1.,adaptive_value_tolerance=3.,adaptive_max_terminal_rate=.1,mcts_widening=False,widening_max_candidates=9,widening_after_visits=10,widening_min_action_visits=1,widening_min_spacing=.03125)
 
 
@@ -424,14 +462,19 @@ def validate_planning_settings(settings):
         raise ValueError("Unknown planning setting")
     values = dict(PLANNING_DEFAULTS, **settings)
     extended=values['mcts_extended_budget']
+    if type(values['mcts_collection_budget']) is not bool:raise ValueError('Invalid collection budget switch')
+    if values['mcts_collection_budget'] and (not extended or values['mcts_budget_mode']!='fixed' or values['mcts_auto_depth'] or values['mcts_widening'] or values['mcts_max_depth']>16):raise ValueError('Collection budget requires fixed extended MCTS depth<=16 without auto depth/widening')
+    if values['widening_policy'] not in ('legacy','budgeted'):raise ValueError('Invalid widening policy')
+    if values['widening_policy']=='budgeted' and (not extended or not values['mcts_widening'] or values['widening_max_candidates']%2==0):raise ValueError('Budgeted widening requires extended widening and odd cap')
     if type(extended) is not bool or type(values['mcts_auto_depth']) is not bool or type(values['mcts_full_trace']) is not bool:raise ValueError('Invalid extended/auto-depth switch')
     if values['mcts_auto_depth'] and not extended:raise ValueError('Auto depth requires extended budget')
     if any(type(values[k]) is not int for k in ('auto_depth_min','auto_depth_max')) or not 2<=values['auto_depth_min']<=values['auto_depth_max']<=8:raise ValueError('Auto depth range must be 2..8')
     if extended and (values['ai_mode']!='mcts' or values['execution_mode']!='sync' or values['candidate_policy']!='grid' or values['tree_policy']!='chance' or values['rollout_policy']!='random' or values['expansion_policy']!='legacy' or values['action_order_policy']!='index' or values['pair_coverage_iterations']!=0 or values['mcts_common_chance'] or values['planning_budget_ms']!=0 or values['frame_tick_slicing'] or values['adaptive_initial_iterations']!=32):raise ValueError('Extended budget requires sync legacy MCTS and initial checkpoint 32')
-    if values['mcts_budget_mode'] not in ('fixed','time','adaptive') or type(values['mcts_widening']) is not bool:raise ValueError('Invalid adaptive mode')
+    if values['mcts_budget_mode']=='importance' and (not extended or (values['mcts_widening'] and values['widening_policy']!='budgeted')):raise ValueError('Importance mode requires extended budget and budgeted widening when enabled')
+    if values['mcts_budget_mode'] not in ('fixed','time','adaptive','importance') or type(values['mcts_widening']) is not bool:raise ValueError('Invalid adaptive mode')
     for name,lo,hi in [('mcts_max_iterations',32 if extended else 2,32768 if extended else 4096),('adaptive_initial_iterations',2,4096),('adaptive_min_action_visits',1,4096),('widening_max_candidates',5,31),('widening_after_visits',1,4096),('widening_min_action_visits',1,4096)]:
         if type(values[name]) is not int or not lo<=values[name]<=hi:raise ValueError('Invalid '+name)
-    for name,lo,hi in [('mcts_time_limit_seconds',.000001,120 if extended else 3600),('adaptive_uncertainty_multiplier',0,float('inf')),('adaptive_value_tolerance',0,float('inf')),('adaptive_max_terminal_rate',0,1),('widening_min_spacing',.000001,.125)]:
+    for name,lo,hi in [('mcts_time_limit_seconds',.000001,(240 if values['mcts_collection_budget'] else 120) if extended else 3600),('adaptive_uncertainty_multiplier',0,float('inf')),('adaptive_value_tolerance',0,float('inf')),('adaptive_max_terminal_rate',0,1),('widening_min_spacing',.000001,.125)]:
         _number(values[name])
         if not lo<=values[name]<=hi:raise ValueError('Invalid '+name)
     flexible=values['mcts_budget_mode']!='fixed'
@@ -477,7 +520,7 @@ def validate_planning_settings(settings):
     if values["ai_mode"] in ("mcts","mcts_value") and values["mcts_iterations"]<values["candidate_count"]:raise ValueError("MCTS must cover every root candidate")
     _number(values["mcts_point_scale"])
     if values["mcts_point_scale"]<=0:raise ValueError("MCTS point scale must be positive")
-    for name in PLANNING_DEFAULTS.keys() - {"mcts_full_trace", "mcts_extended_budget", "mcts_auto_depth", "mcts_budget_mode", "mcts_widening", "pair_coverage_iterations", "action_order_policy", "expansion_policy", "tree_policy", "rollout_policy", "mcts_common_chance", "candidate_policy", "candidate_count", "post_drop_steps", "height_bins", "ai_mode", "value_model_path", "search_leaf", "inter_step_wait_ticks", "mcts_iterations", "mcts_max_depth", "mcts_seed", "two_step_exhaustive_reward", "execution_mode", "frame_tick_slicing", "frame_lead_ticks", "frame_max_attempts"}:
+    for name in PLANNING_DEFAULTS.keys() - {"mcts_collection_budget", "widening_policy", "mcts_full_trace", "mcts_extended_budget", "mcts_auto_depth", "mcts_budget_mode", "mcts_widening", "pair_coverage_iterations", "action_order_policy", "expansion_policy", "tree_policy", "rollout_policy", "mcts_common_chance", "candidate_policy", "candidate_count", "post_drop_steps", "height_bins", "ai_mode", "value_model_path", "search_leaf", "inter_step_wait_ticks", "mcts_iterations", "mcts_max_depth", "mcts_seed", "two_step_exhaustive_reward", "execution_mode", "frame_tick_slicing", "frame_lead_ticks", "frame_max_attempts"}:
         _number(values[name])
         if values[name] < 0:
             raise ValueError(f"Negative {name}")

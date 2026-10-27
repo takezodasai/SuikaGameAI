@@ -477,3 +477,16 @@ coarse-root試作は粗5を1手評価し全anchor保持+2中点、root7/将来5�
 
 
 2026-10-25 STEP8-W：拡張予算opt-inで32〜32768回/最大120秒/深さ2〜256、同じ木の段階追加とsoft deadline、32未達no drop、各手開始前auto深さ2〜8（既定OFF）を追加。要約出力/深さ別訪問・再訪・rollout記録。旧32と3盤面全state digest一致、adaptive継続prefix/早期128終了/2秒超過1〜10ms確認。auto4→3→3→3とadaptive各4手UDP成功、Python260/native1029+境界テスト合格。手動16は序盤32反復のみ、256/32768完走/120秒負荷/自然GOの強さは未検証。旧Player456ファイル不変、標準変更なし。変更前60656eeをdevelopへpush。詳細STEP8W_REPORT.md。
+
+
+2026-10-25 STEP8-X：比較用budgeted widening（訪問32/128・残予算・安全候補4訪問・5→7→9）とadaptive早期停止保護、4条件逐次比較/再開ツール追加。旧32回全探索3盤面一致、Python265/Unity1029+新selftest、各4手UDP成功。高得点化未確認、標準legacy維持。旧Player608ファイル不変、commit/pushなし。次はユーザーの3seed自然GO予備比較。局所高評価位置の重点細分化は今回と分離して検討。詳細STEP8X_REPORT.md。
+
+2026-10-26 STEP8-AA：比較用importance予算配分を追加。複数checkpointと候補の同等性/不確実性・GO重要性を分離、Budgeted Widening連携。別Player Step8AA_02、旧760ファイル保護、272 Python/1029 Unity checksとGUI3手確認。高得点化・自然GO比較は未実施。詳細STEP8AA_REPORT.md。
+
+2026-10-26 STEP8-AB：長時間劣化の原因を予測Scene非同期解放バックログとして再現。専用worldを同期解放、予測material/参照を解放。metadata要求ID/排他と任意GUI保持を追加。55手/120秒2回/GUI3手、278 Python/1029 Unity、96終端物理状態一致、旧1214ファイル保護。新Player Step8AB_02、詳細STEP8AB_REPORT.md。自然GO全編は未検証。
+
+
+2026-10-26 STEP8-AC：長期価値のオフライン基盤を試作。自然GO110ゲーム/23,089状態/39seed群、Train77/Val17/Test16ゲーム。配置57特徴Deep Sets＋順位補助lossのTest MAE265.45、同データ従来構造再学習276.30、得点/個数ridge272.84。新旧再学習のseed-macro差95%区間は0を含み、GO直前過大評価とダブル教師0件が残る。実ゲーム/標準MCTSへ未接続。Python285テスト成功、Unity変更/収集/commit/pushなし。詳細STEP8AC_REPORT.md。
+
+
+2026-10-27 STEP8-AE：収集専用fixed同期MCTSの240秒上限、2枠のゲーム別設定/seed選択・補充・時間停止・再開・監査、観測専用スイカ位置記録を追加。旧Player保護、新Step8AEへ別ビルド。Python295/Unity1029＋イベント物理一致、実通信20手でエラー0/Scene残留0。実時間240秒探索・一晩収集は未実施。旧MCTS/importance/AB解放維持、commit/pushなし。ユーザーはSTEP8AE_REPORT.mdの8時間コマンドで開始。

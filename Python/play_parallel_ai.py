@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--candidates",type=int,default=None)
     parser.add_argument("--post-drop-steps",type=int,default=25)
     parser.add_argument("--settings",type=Path)
+    parser.add_argument("--keep-player-on-error",action="store_true",help="GUI only: stop AI on error but keep its Player window for diagnosis")
+    parser.add_argument("--episode-events",action="store_true",help="Record actual-game drop counts and watermelon events (STEP8U+)")
     parser.add_argument("--no-training-metadata",action="store_true",help="Diagnostic baseline only: skip optional telemetry queries")
     parser.add_argument("--require-metadata",action="store_true",help="Refuse old Players without training metadata")
     parser.add_argument("--expected-go-ratio",type=float,help="Fail before collecting if the built Player has a different GO ratio")
@@ -66,11 +68,13 @@ def main():
     settings.update(frame_tick_slicing=args.frame_tick_slicing,execution_mode=args.planning_execution,frame_budget_ms=args.frame_budget_ms,frame_lead_ticks=args.frame_lead_ticks,frame_max_attempts=args.frame_max_attempts)
     seed=resolve_collection_seed(args.seed,args.games,args.episodes,args.independent_episode_seeds)
     if args.independent_episode_seeds:
+        if args.keep_player_on_error:parser.error("--keep-player-on-error requires regular GUI mode")
+        if args.episode_events:parser.error("--episode-events currently requires regular worker mode")
         if args.view_game is not None or args.view_games not in (None,0):parser.error("Independent episode seed mode is for non-Viewer collection; use legacy mode for live debugging")
         summary=run_seeded_episodes(args.exe,args.output,args.games,args.episodes,args.max_steps,args.base_port,seed,args.headless,settings,args.main_audio=="on",args.others_audio=="on",require_metadata=args.require_metadata,expected_go_ratio=args.expected_go_ratio,training_metadata=not args.no_training_metadata)
         print(json.dumps(dict(output=str(args.output.resolve()),**summary)))
         return 1 if any(w['status']=='error' for r in summary['runs'] for w in r['workers']) else 0
-    summary=run_parallel(args.exe,args.output,args.games,args.episodes,args.max_steps,args.base_port,seed,args.headless,settings,args.view_game,args.main_audio=="on",args.others_audio=="on",not args.no_viewer,view_games=args.view_games,require_metadata=args.require_metadata,expected_go_ratio=args.expected_go_ratio,training_metadata=not args.no_training_metadata)
+    summary=run_parallel(args.exe,args.output,args.games,args.episodes,args.max_steps,args.base_port,seed,args.headless,settings,args.view_game,args.main_audio=="on",args.others_audio=="on",not args.no_viewer,view_games=args.view_games,require_metadata=args.require_metadata,expected_go_ratio=args.expected_go_ratio,training_metadata=not args.no_training_metadata,episode_events=args.episode_events,keep_player_on_error=args.keep_player_on_error)
     print(json.dumps(dict(output=str(args.output.resolve()),**summary),ensure_ascii=False))
     return 1 if any(w["status"]=="error" for w in summary["workers"]) else 0
 

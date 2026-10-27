@@ -166,7 +166,7 @@ public partial class PlayerController : MonoBehaviour
         }
 
         currentFruit.GetComponent<FruitEvolution>().IsPreview = false;
-        if(ScoreManager.Instance!=null)ScoreManager.Instance.RecordDroppedFruit(currentFruit.GetComponent<FruitEvolution>().fruitType);
+        if(ScoreManager.Instance!=null)ScoreManager.Instance.RecordDroppedFruit(currentFruit.GetComponent<FruitEvolution>().fruitType,currentFruit.GetComponent<FruitEvolution>());
         nextDropAllowedAt = Time.timeAsDouble + Mathf.Max(0f, dropCooldownSeconds);
         currentFruit = null;  // 保持中の果物をクリア
         SpawnFruit();         // 次の果物を生成

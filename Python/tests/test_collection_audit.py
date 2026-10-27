@@ -91,7 +91,7 @@ class CollectionAuditTests(unittest.TestCase):
         actual=dict(schema_version=1,unity_version='2022.3.21f1',build_guid='build',fixed_delta_time=.02,physics_profiles=[{}],boundaries=[{}])
         replies=iter([dict(environment=placeholder),dict(environment=actual)])
         env.receive_state=lambda timeout:next(replies)
-        self.assertEqual(env.get_environment(),actual);self.assertEqual(len(sent),2)
+        self.assertEqual(env.get_environment(),actual);self.assertEqual(len(sent),1)
 
     def test_external_test_requires_unseen_seed_and_initial_sequence(self):
         from suika_ai.value_train import external_test_context

@@ -12,12 +12,12 @@ public class ScoreManager : MonoBehaviour
     public int EpisodeMergeCount {get;private set;}
     public int EpisodeMaxFruitType {get;private set;} = -1;
     public readonly SuikaEpisodeEvents EpisodeEvents = new SuikaEpisodeEvents();
-    public void RecordDroppedFruit(int type) {EpisodeMaxFruitType=Mathf.Max(EpisodeMaxFruitType,type);EpisodeEvents.Drop(type,totalScore,Time.fixedTimeAsDouble);}
-    public void RecordMerge(int fromType,int createdType)
+    public void RecordDroppedFruit(int type,FruitEvolution observed=null) {EpisodeMaxFruitType=Mathf.Max(EpisodeMaxFruitType,type);EpisodeEvents.Drop(type,totalScore,Time.fixedTimeAsDouble,EpisodeEvents.Enabled&&type==10&&observed!=null?SuikaEpisodeEvents.Observe(observed.transform.position,observed):null);}
+    public void RecordMerge(int fromType,int createdType,Vector2? eventPosition=null,FruitEvolution observed=null)
     {EpisodeMergeCount++;EpisodeMaxFruitType=Mathf.Max(EpisodeMaxFruitType,Mathf.Max(fromType,createdType));
         // Existing FruitEvolution calls RecordMerge just BEFORE AddScoreForEvolution.
         int after=totalScore+(fromType>=0&&fromType<evolutionScores.Length?evolutionScores[fromType]:0);
-        EpisodeEvents.Merge(fromType,createdType,after,Time.fixedTimeAsDouble);
+        EpisodeEvents.Merge(fromType,createdType,after,Time.fixedTimeAsDouble,EpisodeEvents.Enabled&&eventPosition.HasValue&&(fromType==10||createdType==10)?SuikaEpisodeEvents.Observe(eventPosition.Value,observed):null);
     }
 
     private TextMeshProUGUI scoreText; // 現在のスコアを表示するTextMeshProUGUI

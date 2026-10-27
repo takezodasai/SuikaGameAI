@@ -27,7 +27,7 @@ public partial class UDPCommunicatorUnity
         if(message.command=="environment")
         {
             RemoteControl=true;trainingMetadataEnabled=true;requestedEnvironment=true;
-            SendPacket(new Observation());return;
+            SendPacket(new Observation {environment_request_id=message.request_id});return;
         }
         if(message.command=="presentation")
         {

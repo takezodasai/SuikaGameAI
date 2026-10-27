@@ -93,6 +93,7 @@ def collect_worker(spec,env,settings,episodes,max_steps,stop,output,barrier=None
                 state=env.reset()
                 if state.get("has_worker_seed") and state.get("worker_seed")!=spec.seed:raise ValueError("Player seed differs from requested worker seed")
                 if require_metadata and state.get("has_worker_seed") is not True:raise ValueError("Player did not confirm worker seed")
+                if settings.get('mcts_collection_budget') and (state.get('collection_budget_supported') is not True or state.get('collection_time_limit_seconds',0)<settings['mcts_time_limit_seconds']):raise ValueError('Player lacks STEP8AE collection budget support; use the new Player')
                 metadata.attach(state)
                 if metadata.environment_id is not None and env.last_state and env.last_state["episode_id"]==state["episode_id"]:state=env.last_state
                 state=metadata.attach(state);initial_score=state["score"];step_total=0;gap_total=0
@@ -186,7 +187,8 @@ def selected_video_games(games,headless=False,view_game=None,view_games=None):
     return [f"game_{i:02d}" for i in indices]
 
 
-def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,seed=12345,headless=False,settings=None,view_game=None,main_audio=True,others_audio=False,launch_viewer=True,view_games=None,require_metadata=False,expected_go_ratio=None,training_metadata=True,max_episode_seconds=None,expected_rules_version=None,step_timeout=None,episode_events=False):
+def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,seed=12345,headless=False,settings=None,view_game=None,main_audio=True,others_audio=False,launch_viewer=True,view_games=None,require_metadata=False,expected_go_ratio=None,training_metadata=True,max_episode_seconds=None,expected_rules_version=None,step_timeout=None,episode_events=False,keep_player_on_error=False,external_stop=None):
+    if keep_player_on_error and headless:raise ValueError("Keeping a failed Player requires visible GUI mode")
     if max_episode_seconds is not None and (not isinstance(max_episode_seconds,(float,int)) or not 0<max_episode_seconds<=86400):raise ValueError("Invalid episode wall limit")
     if not training_metadata and (require_metadata or expected_go_ratio is not None or expected_rules_version is not None):raise ValueError("Metadata must be enabled to verify the environment")
     exe=Path(exe).resolve();output=Path(output).resolve()
@@ -234,6 +236,7 @@ def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,se
                 while pending:
                     completed,pending=wait(pending,timeout=.25)
                     controls.poll()
+                    if external_stop is not None and external_stop.is_set():stop.set()
                     for f in completed:
                         result=f.result();results.append(result);print(json.dumps(result),flush=True)
                     if any(p.poll() is not None for p in children) and pending:
@@ -254,7 +257,11 @@ def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,se
         stop.set()
         for env in envs:env.close()
         # Only handles launched above; never find/kill the user's Editor or unrelated Players.
-        for child in children:
+        failed={r["game_id"] for r in results if r.get("status")=="error"}
+        for spec,child in zip(specs,children):
+            if keep_player_on_error and spec.game_id in failed and child.poll() is None:
+                print(json.dumps(dict(game_id=spec.game_id,pid=child.pid,player_kept_open=True,ai_stopped=True)),flush=True)
+                continue
             if child.poll() is None:
                 child.terminate()
                 try:child.wait(timeout=5)

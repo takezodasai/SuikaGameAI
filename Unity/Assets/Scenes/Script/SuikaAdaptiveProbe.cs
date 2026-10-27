@@ -13,6 +13,7 @@ public sealed class SuikaAdaptiveProbe:MonoBehaviour {
     static MctsPlanner.Node Node(int id,int depth){var n=new MctsPlanner.Node(5,id,depth){visits=40,positions=MctsAdaptiveControl.InitialPositions(5)};foreach(var e in n.actions){e.visits=8;e.sum=0;e.sumSquares=0;e.min=e.max=0;e.immediate=new StepPlanner.Candidate {success=true,drop_success=true};}return n;}
     static void SelfTests(){
         MctsDepthControl.SelfTests();
+        MctsImportanceControl.SelfTests();
         var s=new PlanningSettings {ai_mode="mcts",mcts_widening=true};s.Validate();
         var n=Node(0,0);var edge=n.actions[0];var a=MctsAdaptiveControl.TryWiden(n,s,40);Check(a!=null&&n.actions.Length==6&&a.x>0&&a.x<1,"root addition");Check(ReferenceEquals(edge,n.actions[0])&&edge.visits==8,"existing statistics preserved");Check(MctsAdaptiveControl.TryWiden(n,s,41)==null,"new action gets visits before another addition");
         var future=Node(2,2);Check(MctsAdaptiveControl.TryWiden(future,s,40).depth==2,"nonroot addition");
@@ -22,6 +23,17 @@ public sealed class SuikaAdaptiveProbe:MonoBehaviour {
         root.actions[0].terminal_returns=3;Check(!MctsAdaptiveControl.Assess(root,s,64,0,0).stable,"terminal samples continue search");
         root.actions[0].terminal_returns=0;root.actions[0].sum=80;root.actions[0].sumSquares=800;Check(MctsAdaptiveControl.Assess(root,s,64,0,0).reason=="value_drift","value drift continues search");
         var all=new HashSet<float>();foreach(float x in n.positions.x)Check(x>=0&&x<=1&&all.Add(x),"unique legal positions");
+        var bs=new PlanningSettings {ai_mode="mcts",mcts_extended_budget=true,mcts_widening=true,widening_policy="budgeted",mcts_max_depth=4};bs.Validate();
+        var bn=Node(0,0);bn.visits=32;
+        Check(MctsAdaptiveControl.TryBudgeted(bn,bs,32,36,10000,10).Count==0,"remaining iterations guard");
+        Check(MctsAdaptiveControl.TryBudgeted(bn,bs,32,512,1,10).Count==0,"remaining time guard");
+        var ba=MctsAdaptiveControl.TryBudgeted(bn,bs,32,512,10000,10);Check(ba.Count==2&&bn.actions.Length==7,"five to seven");
+        var bc=MctsAdaptiveControl.Assess(bn,bs,64,0,0);MctsAdaptiveControl.GuardAdditions(bc,ba,new List<MctsPlanner.Node>{bn},bs,32);Check(!bc.stable&&bc.pending_added_actions==2,"unknown added actions block stable");
+        foreach(var e in bn.actions){e.visits=16;e.immediate=new StepPlanner.Candidate {success=true,drop_success=true};}bn.visits=128;
+        var bb=MctsAdaptiveControl.TryBudgeted(bn,bs,128,512,10000,10);Check(bb.Count==2&&bn.actions.Length==9,"seven to nine");
+        Check(MctsAdaptiveControl.TryBudgeted(bn,bs,256,512,10000,10).Count==0,"nine cap");
+        var nn=Node(0,2);Check(MctsAdaptiveControl.TryBudgeted(nn,bs,128,512,10000,10).Count==2,"budgeted nonroot");
+        var go=Node(0,0);foreach(var e in go.actions)e.immediate.predicted_game_over=true;Check(MctsAdaptiveControl.TryBudgeted(go,bs,40,512,10000,10).Count==0,"terminal no additions");
         Debug.Log("ADAPTIVE CONTROL SELFTESTS OK");
     }
     IEnumerator Start(){

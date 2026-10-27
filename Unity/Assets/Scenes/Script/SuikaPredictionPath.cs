@@ -150,7 +150,7 @@ public sealed partial class SuikaPhysicsSimulator
             {
                 using(MctsPerformance.Measure("wait_tick")) {
                     Physics2D.SyncTransforms();
-                    using(MctsPerformance.Measure("native_physics")) if(!owner.physics.Simulate(state.dt)) throw new InvalidOperationException("Path wait simulation failed");
+                    using(MctsPerformance.Measure("native_physics")) if(!owner.SimulateNative(state.dt)) throw new InvalidOperationException("Path wait simulation failed");
                     owner.FlushRemoval();state.terminal=owner.IsGameOver(state.held);
                     state.nextTick+=state.dt;TotalTicks++;BoundaryWaitTicks++;
                 }

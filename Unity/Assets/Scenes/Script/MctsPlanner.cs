@@ -40,6 +40,8 @@ public static class MctsPlanner
     }
     [Serializable] public class Report
     {
+        public PredictionLifecycle.Sample lifetime_start,lifetime_end;
+        public MctsImportanceControl.Context importance_context;public MctsImportanceControl.Audit[] importance_checkpoints;
         public bool experimental_depth,compact_report;public int search_go_samples,max_reached_depth;
         public MctsDepthControl.Level[] depth_metrics;public MctsDepthControl.Choice depth_selection;
         public string budget_stop_reason;public int iteration_cap;public double time_limit_ms,time_overrun_ms;public MctsAdaptiveControl.Checkpoint[] budget_checkpoints;public MctsAdaptiveControl.Addition[] candidate_additions;
@@ -155,6 +157,7 @@ public static class MctsPlanner
         var rng=new System.Random(s.mcts_seed);var root=SearchNode(0,0,s);var nodes=new List<Node>{root};
         var report=new Report {experimental_depth=s.mcts_max_depth>=16,leaf=network==null?"reward":"value",requested_iterations=s.mcts_iterations,max_depth=s.mcts_max_depth,seed=s.mcts_seed,
             candidate_policy=s.candidate_policy,public_spawn_slots=slots,public_spawn_types=publicTypes,irrelevant_final_chance_collapsed=network==null&&s.mcts_max_depth>=2,managed_start_bytes=GC.GetTotalMemory(false),unity_allocated_start_bytes=UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong()};
+        report.lifetime_start=PredictionLifecycle.Read(false);
         report.unity_allocated_sampled_peak_bytes=report.unity_allocated_start_bytes;
         var d=new StepPlanner.Decision {settings=s,ai_mode=s.ai_mode,evaluation_version="step8b-uct-"+report.leaf,mcts=report,
             decision_id=Guid.NewGuid().ToString("N"),drop_range=range,candidates=new StepPlanner.Candidate[s.candidate_count],
@@ -184,7 +187,10 @@ public static class MctsPlanner
         report.iteration_cap=cap;if(flexible)report.requested_iterations=cap;report.time_limit_ms=flexible?s.mcts_time_limit_seconds*1000d:0;
         report.budget_stop_reason="iteration_limit";
         var checkpoints=new List<MctsAdaptiveControl.Checkpoint>();var additions=new List<MctsAdaptiveControl.Addition>();
-        int nextCheckpoint=s.adaptive_initial_iterations,previousWinner=-1;double previousMean=0;
+        bool importance=s.mcts_budget_mode=="importance";
+        var importanceChecks=new List<MctsImportanceControl.Audit>();
+        if(importance)report.importance_context=MctsImportanceControl.Capture(player,manager,initialScore,frozenRoot);
+        int nextCheckpoint=s.adaptive_initial_iterations,previousWinner=-1,previousCheckpoint=0;double previousMean=0,maxIterationMs=0;
         for(int iteration=0;iteration<cap;iteration++)
         {
             if(flexible&&timer.Elapsed.TotalMilliseconds>=report.time_limit_ms){report.budget_stop_reason="time_limit";break;}
@@ -219,8 +225,14 @@ public static class MctsPlanner
                     }
                     if(open)stateDigests.Add(Digest(stateKey??path.StateSignature()));
                     if(s.mcts_widening&&!rollout) {
-                        var added=MctsAdaptiveControl.TryWiden(node,s,iteration);
-                        if(added!=null){additions.Add(added);if(depth==0)Array.Resize(ref d.candidates,node.actions.Length);}
+                        if(s.widening_policy=="budgeted") {
+                            if(!importance||MctsImportanceControl.AllowRefinement(node,s,importanceChecks.Count==0?null:importanceChecks[importanceChecks.Count-1]))
+                                additions.AddRange(MctsAdaptiveControl.TryBudgeted(node,s,iteration,cap,report.time_limit_ms-timer.Elapsed.TotalMilliseconds,maxIterationMs));
+                            if(depth==0)Array.Resize(ref d.candidates,node.actions.Length);
+                        } else {
+                            var added=MctsAdaptiveControl.TryWiden(node,s,iteration);
+                            if(added!=null){additions.Add(added);if(depth==0)Array.Resize(ref d.candidates,node.actions.Length);}
+                        }
                     }
                     int actionCount=s.mcts_widening&&!rollout?node.actions.Length:s.candidate_policy=="coarse-root"&&depth>0?5:s.candidate_count;
                     DropCandidateGenerator.Set positions=s.mcts_widening&&!rollout?node.positions:s.candidate_policy=="coarse-root"&&depth==0?root.positions:null;
@@ -356,9 +368,17 @@ public static class MctsPlanner
                     leaf_points=leaf,total_points=finalScore-initialScore+leaf,state_digest=MctsPerformance.VerifyStates?Digest(path.StateSignature()):null,elapsed_ms=watch.Elapsed.TotalMilliseconds});
             }
             if(s.mcts_extended_budget&&!s.mcts_full_trace){var item=iterations[iterations.Count-1];item.actions=null;item.chance_slots=null;item.tree_node_ids=null;item.public_observations=null;item.state_signatures=null;item.action_x=null;item.guided_steps=null;item.coverage_forced_steps=null;item.state_digest=null;}
-            report.completed_iterations++;
+            report.completed_iterations++;maxIterationMs=Math.Max(maxIterationMs,watch.Elapsed.TotalMilliseconds);
+            if(importance&&report.completed_iterations>=nextCheckpoint) {
+                var audit=MctsImportanceControl.Assess(root,s,report.completed_iterations,importanceChecks,additions,nodes,report.importance_context,timer.Elapsed.TotalMilliseconds,report.time_limit_ms-timer.Elapsed.TotalMilliseconds,maxIterationMs);
+                foreach(var it in iterations)foreach(bool isRollout in it.rollout_steps){if(isRollout)audit.rollout_actions++;else audit.tree_actions++;}
+                importanceChecks.Add(audit);checkpoints.Add(audit.root);
+                nextCheckpoint=Math.Min(cap,Math.Max(nextCheckpoint+1,nextCheckpoint*2));
+                if(!audit.continue_search){report.budget_stop_reason=audit.reason;break;}
+            }
             if(s.mcts_budget_mode=="adaptive"&&report.completed_iterations>=nextCheckpoint) {
                 var checkpoint=MctsAdaptiveControl.Assess(root,s,report.completed_iterations,previousWinner,previousMean);
+                MctsAdaptiveControl.GuardAdditions(checkpoint,additions,nodes,s,previousCheckpoint);previousCheckpoint=report.completed_iterations;
                 checkpoints.Add(checkpoint);previousWinner=checkpoint.winner;previousMean=checkpoint.mean;
                 nextCheckpoint=Math.Min(cap,Math.Max(nextCheckpoint+1,nextCheckpoint*2));
                 if(checkpoint.stable){report.budget_stop_reason="adaptive_stable";break;}
@@ -367,7 +387,8 @@ public static class MctsPlanner
         }
         if(s.mcts_extended_budget&&report.completed_iterations<32)throw new InvalidOperationException("Extended MCTS minimum32 not reached; no drop; completed="+report.completed_iterations+"; elapsed_ms="+timer.Elapsed.TotalMilliseconds+"; time_limit_ms="+report.time_limit_ms+"; overrun_ms="+Math.Max(0,timer.Elapsed.TotalMilliseconds-report.time_limit_ms));
         if(report.completed_iterations==0)throw new InvalidOperationException("MCTS time limit: completed_iterations=0; no drop; elapsed_ms="+timer.Elapsed.TotalMilliseconds);
-        report.budget_checkpoints=checkpoints.ToArray();report.candidate_additions=additions.ToArray();
+        foreach(var a in additions){var e=nodes[a.node_id].actions[a.index];a.final_visits=e.visits;a.final_revisits=Math.Max(0,e.visits-1);a.immediate_go=e.immediate!=null&&e.immediate.predicted_game_over;}
+        report.budget_checkpoints=checkpoints.ToArray();report.candidate_additions=additions.ToArray();if(importance)report.importance_checkpoints=importanceChecks.ToArray();
         for(int i=0;i<d.candidates.Length;i++)
         {
             var c=d.candidates[i];if(c==null) {
@@ -408,6 +429,7 @@ public static class MctsPlanner
             metrics.Add(new NodeMetric {unvisited_order=n.unvisited_order,id=n.id,depth=n.depth,visits=n.visits,arrivals=n.arrivals,distinct_states=n.state_signatures==null?0:n.state_signatures.Count,public_context=n.public_context,history_key=n.history_key,actions=rows});
         }
         report.nodes=metrics.ToArray();report.iterations=iterations.ToArray();if(s.mcts_extended_budget){report.depth_metrics=MctsDepthControl.Levels(report);foreach(var it in iterations){report.search_go_samples+=it.game_over?1:0;report.max_reached_depth=Math.Max(report.max_reached_depth,it.depth);}if(!s.mcts_full_trace){report.compact_report=true;report.iterations=new IterationMetric[0];report.nodes=new[]{report.nodes[0]};}}report.decision_nodes=nodes.Count;
+        report.lifetime_end=PredictionLifecycle.Read(false);
         report.managed_end_bytes=GC.GetTotalMemory(false);report.elapsed_ms=timer.Elapsed.TotalMilliseconds;report.time_overrun_ms=flexible?Math.Max(0,report.elapsed_ms-report.time_limit_ms):0;report.mcts_search_ms=report.elapsed_ms-(report.refinement==null?0:report.refinement.total_ms);
         d.same_source_verified=report.source_unchanged&&report.prefixes_match;d.evaluated_count=d.candidates.Length;if(flexible){d.evaluated_count=0;foreach(var candidate in d.candidates)if(candidate.success)d.evaluated_count++;}d.elapsed_ms=report.elapsed_ms;yield return d;
     }

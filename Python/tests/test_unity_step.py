@@ -37,11 +37,14 @@ class StepTests(unittest.TestCase):
         with UnityEnv(local=("127.0.0.1", 0)) as env:
             env._action_episode = "episode1"
             calls = []
+            clock = [0.0]
             def receive(*args, **kwargs):
                 if kwargs:
+                    clock[0] += .05
                     raise TimeoutError()
                 return state()
-            with patch.object(env, "receive_state", side_effect=receive), patch.object(env, "_send", side_effect=calls.append):
+            # Test protocol retries, not host scheduling/GC inside a 20ms window.
+            with patch("suika_ai.unity_env.time.monotonic", side_effect=lambda: clock[0]), patch.object(env, "receive_state", side_effect=receive), patch.object(env, "_send", side_effect=calls.append):
                 with self.assertRaises(TimeoutError):
                     env.step(0.5, timeout=0.27)
                 self.assertGreaterEqual(len(calls), 2)

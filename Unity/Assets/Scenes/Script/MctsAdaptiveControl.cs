@@ -7,15 +7,20 @@ public static class MctsAdaptiveControl {
     [Serializable] public class Checkpoint {
         public int iterations,winner,previous_winner;public float selected_x;
         public double mean,gap,standard_error,mean_drift,terminal_rate;public bool stable;public string reason;
+        public int pending_added_actions;public bool candidate_guard_blocked;
         public int[] root_visits;public double[] root_means;
     }
-    [Serializable] public class Addition {public int iteration,node_id,depth,index,node_visits;public float x,left,right;public string reason;}
+    [Serializable] public class Addition {public int iteration,node_id,depth,index,node_visits;public float x,left,right;public string reason;public int final_visits,final_revisits;public bool immediate_go;}
     public static void Validate(PlanningSettings s) {
+        if(s.mcts_collection_budget&&(!s.mcts_extended_budget||s.mcts_budget_mode!="fixed"||s.mcts_auto_depth||s.mcts_widening||s.mcts_max_depth>16))throw new ArgumentException("Collection budget requires fixed extended MCTS, depth<=16, no auto depth/widening");
+        if(s.widening_policy!="legacy"&&s.widening_policy!="budgeted")throw new ArgumentException("Invalid widening policy");
+        if(s.widening_policy=="budgeted"&&(!s.mcts_extended_budget||!s.mcts_widening||s.widening_max_candidates%2==0))throw new ArgumentException("Budgeted widening requires extended widening and odd cap");
+        if(s.mcts_budget_mode=="importance"&&(!s.mcts_extended_budget||(s.mcts_widening&&s.widening_policy!="budgeted")))throw new ArgumentException("Importance mode requires extended budget and budgeted widening when enabled");
         if(s.mcts_auto_depth&&!s.mcts_extended_budget)throw new ArgumentException("Auto depth requires extended budget");
         if(s.auto_depth_min<2||s.auto_depth_max>8||s.auto_depth_min>s.auto_depth_max)throw new ArgumentException("Auto depth initial range must be 2..8");
         if(s.mcts_extended_budget&&(s.ai_mode!="mcts"||s.execution_mode!="sync"||s.candidate_policy!="grid"||s.tree_policy!="chance"||s.rollout_policy!="random"||s.expansion_policy!="legacy"||s.action_order_policy!="index"||s.pair_coverage_iterations!=0||s.mcts_common_chance||s.planning_budget_ms!=0||s.frame_tick_slicing||s.adaptive_initial_iterations!=32))throw new ArgumentException("Extended budget requires sync legacy MCTS and initial checkpoint 32");
-        if(s.mcts_budget_mode!="fixed"&&s.mcts_budget_mode!="time"&&s.mcts_budget_mode!="adaptive")throw new ArgumentException("Invalid MCTS budget mode");
-        if(float.IsNaN(s.mcts_time_limit_seconds)||float.IsInfinity(s.mcts_time_limit_seconds)||s.mcts_time_limit_seconds<.000001f||s.mcts_time_limit_seconds>(s.mcts_extended_budget?120:3600)||s.mcts_max_iterations<(s.mcts_extended_budget?32:2)||s.mcts_max_iterations>(s.mcts_extended_budget?32768:4096)||s.adaptive_initial_iterations<2||s.adaptive_initial_iterations>4096||s.adaptive_min_action_visits<1||s.adaptive_min_action_visits>4096)throw new ArgumentException("Invalid adaptive search bounds");
+        if(s.mcts_budget_mode!="fixed"&&s.mcts_budget_mode!="time"&&s.mcts_budget_mode!="adaptive"&&s.mcts_budget_mode!="importance")throw new ArgumentException("Invalid MCTS budget mode");
+        if(float.IsNaN(s.mcts_time_limit_seconds)||float.IsInfinity(s.mcts_time_limit_seconds)||s.mcts_time_limit_seconds<.000001f||s.mcts_time_limit_seconds>(s.mcts_extended_budget?(s.mcts_collection_budget?240:120):3600)||s.mcts_max_iterations<(s.mcts_extended_budget?32:2)||s.mcts_max_iterations>(s.mcts_extended_budget?32768:4096)||s.adaptive_initial_iterations<2||s.adaptive_initial_iterations>4096||s.adaptive_min_action_visits<1||s.adaptive_min_action_visits>4096)throw new ArgumentException("Invalid adaptive search bounds");
         foreach(float v in new[]{s.adaptive_uncertainty_multiplier,s.adaptive_value_tolerance,s.adaptive_max_terminal_rate,s.widening_min_spacing})if(float.IsNaN(v)||float.IsInfinity(v)||v<0)throw new ArgumentException("Invalid adaptive threshold");
         if(s.adaptive_max_terminal_rate>1||s.widening_max_candidates<5||s.widening_max_candidates>31||s.widening_after_visits<1||s.widening_after_visits>4096||s.widening_min_action_visits<1||s.widening_min_action_visits>4096||s.widening_min_spacing<=0||s.widening_min_spacing>.125f)throw new ArgumentException("Invalid widening bounds");
         if(s.mcts_budget_mode!="fixed"||s.mcts_widening) {
@@ -27,9 +32,9 @@ public static class MctsAdaptiveControl {
     public static DropCandidateGenerator.Set InitialPositions(int count) {
         var p=new DropCandidateGenerator.Set {x=new float[count],sources=new string[count]};for(int i=0;i<count;i++){p.x[i]=(float)i/(count-1);p.sources[i]="initial-grid";}return p;
     }
-    public static Addition TryWiden(MctsPlanner.Node n,PlanningSettings s,int iteration) {
-        if(!s.mcts_widening||n.actions.Length>=s.widening_max_candidates||n.visits<s.widening_after_visits*(n.added_candidates+1)*(n.added_candidates+1))return null;
-        foreach(var e in n.actions)if((e.immediate==null||(!e.immediate.predicted_game_over&&e.immediate.drop_success))&&e.visits<s.widening_min_action_visits)return null;
+    public static Addition TryWiden(MctsPlanner.Node n,PlanningSettings s,int iteration,bool authorizedStage=false) {
+        if(!authorizedStage&&(!s.mcts_widening||n.actions.Length>=s.widening_max_candidates||n.visits<s.widening_after_visits*(n.added_candidates+1)*(n.added_candidates+1)))return null;
+        if(!authorizedStage)foreach(var e in n.actions)if((e.immediate==null||(!e.immediate.predicted_game_over&&e.immediate.drop_success))&&e.visits<s.widening_min_action_visits)return null;
         var order=new List<int>();for(int i=0;i<n.actions.Length;i++)order.Add(i);order.Sort((a,b)=>n.positions.x[a].CompareTo(n.positions.x[b]));
         bool coverage=n.added_candidates%2==1;double best=double.NegativeInfinity;var ties=new List<int>();
         for(int j=0;j<order.Count-1;j++) {
@@ -43,6 +48,33 @@ public static class MctsAdaptiveControl {
         foreach(float old in n.positions.x)if(Mathf.Abs(old-x)<s.widening_min_spacing*.999f)return null;
         int index=n.actions.Length;Array.Resize(ref n.actions,index+1);n.actions[index]=new MctsPlanner.Edge();Array.Resize(ref n.positions.x,index+1);Array.Resize(ref n.positions.sources,index+1);n.positions.x[index]=x;n.positions.sources[index]=coverage?"widen-coverage":"widen-promising";n.added_candidates++;
         return new Addition {iteration=iteration,node_id=n.id,depth=n.depth,index=index,node_visits=n.visits,x=x,left=left,right=right,reason=n.positions.sources[index]};
+    }
+    // No physics probes: local visits, observed opportunity and remaining soft budget.
+    public static List<Addition> TryBudgeted(MctsPlanner.Node n,PlanningSettings s,int iteration,int cap,double remainingMs,double conservativeIterationMs) {
+        var result=new List<Addition>();
+        if(n.actions.Length+2>s.widening_max_candidates||n.visits<32*(1+n.added_candidates/2)*(1+n.added_candidates/2))return result;
+        int safe=0;foreach(var e in n.actions){
+            if(e.immediate==null)return result;
+            if(!e.immediate.predicted_game_over&&e.immediate.drop_success){safe++;if(e.visits<s.adaptive_min_action_visits)return result;}
+        }
+        if(safe==0)return result;
+        // At least two new candidates x min visits, discounted by this node's arrival rate.
+        double rate=(double)n.visits/Math.Max(1,iteration);
+        double needed=2*s.adaptive_min_action_visits/Math.Max(.000001,rate);
+        if(cap-iteration<needed||remainingMs<needed*Math.Max(.01,conservativeIterationMs))return result;
+        for(int k=0;k<2;k++){var a=TryWiden(n,s,iteration,true);if(a!=null)result.Add(a);}
+        return result;
+    }
+    public static void GuardAdditions(Checkpoint c,List<Addition> additions,List<MctsPlanner.Node> nodes,PlanningSettings s,int previousCheckpoint) {
+        if(s.widening_policy!="budgeted")return;
+        bool changed=false;
+        foreach(var a in additions){var e=nodes[a.node_id].actions[a.index];
+            bool safe=e.immediate==null||(!e.immediate.predicted_game_over&&e.immediate.drop_success);
+            if(safe&&e.visits<s.adaptive_min_action_visits)c.pending_added_actions++;
+            if(a.iteration>=previousCheckpoint)changed=true;
+        }
+        c.candidate_guard_blocked=c.pending_added_actions>0||changed;
+        if(c.candidate_guard_blocked){c.stable=false;c.reason=c.pending_added_actions>0?"added_actions_under_sampled":"candidates_changed_since_checkpoint";}
     }
     public static Checkpoint Assess(MctsPlanner.Node root,PlanningSettings s,int iterations,int previousWinner,double previousMean) {
         var c=new Checkpoint {iterations=iterations,winner=-1,previous_winner=previousWinner,reason="no_safe_candidate",root_visits=new int[root.actions.Length],root_means=new double[root.actions.Length]};
@@ -62,6 +94,9 @@ public static class MctsAdaptiveControl {
         else if(c.mean_drift>s.adaptive_value_tolerance)c.reason="value_drift";
         else if(c.terminal_rate>s.adaptive_max_terminal_rate)c.reason="terminal_samples";
         else if(c.gap<s.adaptive_uncertainty_multiplier*c.standard_error)c.reason="overlapping_sample_values";
+        // Extended A/B/C/D use the same coverage rule, including unknown/unvisited candidates.
+        if(s.mcts_extended_budget)foreach(var e in root.actions)
+            if((e.immediate==null||(!e.immediate.predicted_game_over&&e.immediate.drop_success))&&e.visits<s.adaptive_min_action_visits)c.reason="insufficient_action_visits";
         c.stable=c.reason=="stable";return c;
     }
 }

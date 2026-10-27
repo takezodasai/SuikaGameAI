@@ -79,7 +79,7 @@ public class FruitEvolution : MonoBehaviour
                 if (fruitType == 10)
                 {
                     PredictionDiagnostics.Merge(this, otherFruit, null);
-                    if(Simulation==null && ScoreManager.Instance!=null)ScoreManager.Instance.RecordMerge(fruitType,-1);
+                    if(Simulation==null && ScoreManager.Instance!=null)ScoreManager.Instance.RecordMerge(fruitType,-1,mergePosition);
                     RemoveFruit(otherFruit);
                     RemoveFruit(this);
                     if (Simulation == null) udpcomm.SendObservationsWaterMelon();
@@ -125,7 +125,7 @@ public class FruitEvolution : MonoBehaviour
                     }
 
                     PredictionDiagnostics.Merge(this, otherFruit, fe);
-                    if(Simulation==null && ScoreManager.Instance!=null)ScoreManager.Instance.RecordMerge(fruitType,nextType);
+                    if(Simulation==null && ScoreManager.Instance!=null)ScoreManager.Instance.RecordMerge(fruitType,nextType,mergePosition,fe);
 
                     // 得点加算：進化する前の fruitType を使ってスコアを加算（例：サクランボ→イチゴの場合は fruitType=0 なので 1点）
                     if (Simulation != null) Simulation.AddScore(fruitType);
