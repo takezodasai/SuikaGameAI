@@ -490,3 +490,12 @@ coarse-root試作は粗5を1手評価し全anchor保持+2中点、root7/将来5�
 
 
 2026-10-27 STEP8-AE：収集専用fixed同期MCTSの240秒上限、2枠のゲーム別設定/seed選択・補充・時間停止・再開・監査、観測専用スイカ位置記録を追加。旧Player保護、新Step8AEへ別ビルド。Python295/Unity1029＋イベント物理一致、実通信20手でエラー0/Scene残留0。実時間240秒探索・一晩収集は未実施。旧MCTS/importance/AB解放維持、commit/pushなし。ユーザーはSTEP8AE_REPORT.mdの8時間コマンドで開始。
+
+
+2026-10-27 同期MCTS内部最適化：依頼により現状を9ad99f1でcommit/push後、予測専用コンポーネント参照・列挙バッファ・同tick重複Syncを最適化。最終SyncOptimized_03で固定4盤面24組の全探索/物理状態一致、密集5回中央値4.05〜4.62%短縮、Python299/Unity1029合格。実通信8手は旧版と選択/得点一致、自然GO性能は未比較。旧Playerと進行中収集を保持。最適化差分は未commit。詳細SYNC_MCTS_OPTIMIZATION_REPORT.md。
+
+2026-10-28 隔離物理マルチスレッド診断：既存Player/設定を保持、新PhysicsThreads_01。密集32回/深さ4は中央値716→1410msへ悪化、順序整列ONでも状態差/深さ16で選択差。標準採用しない。単一側は旧4盤面一致、Python305/Unity1067成功。詳細PHYSICS_THREADING_REPORT.md。commit/pushなし。
+
+2026-10-28 MCTS方策学習初版：自然GO98ゲーム/20,671判断、旧Test16と未完了2を隔離。Train79/Val17/新Test2、DeepSets36,353parameter、Test模倣一致28.85%で単純29.45%を超えずMCTS未接続。CPU1thread学習、保存/再開/推論確認。観測専用5目標イベントを別LearningEvents_02へ実装、現在収集/旧Player保持。ダブル実データ0、報酬数値は未固定/無効、物理/得点/GO変更なし。Python326/Unity1072+イベント物理一致。詳細MCTS_POLICY_EXPERIENCE_REPORT.md。commit/pushなし。
+
+2026-10-28 成功抽出比較：新自然GO57ゲームを追加、Train116/Val26/新Test11/保護旧Test2、成功19/6/2/1。既存DeepSets構造不変、抽出1/2/4倍。Val選択2倍だがTest一致25.79/26.33/25.17%、群CIは0を含み一貫改善なし、MCTS未接続。future追加得点/イベントknown-maskを前後状態へ別保存、ダブル正例0。Python346成功、Unity/収集/旧資産保持、commit/pushなし。詳細POLICY_SUCCESS_SAMPLING_REPORT.md。次は価値の追加得点+将来スイカ生成、未観測共存の負例化を避ける。

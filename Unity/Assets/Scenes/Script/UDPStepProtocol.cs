@@ -91,6 +91,7 @@ public partial class UDPCommunicatorUnity
         {
             try
             {
+                if(prepared==null)SuikaDecisionCapsules.Capture(this,playerController,gameManager,episodeId,message.action_id,frameTick,message.planning_settings??planningSettings);
                 using(var probe=prepared==null?SuikaRuntimeProbe.BeginPlan(message.planning_settings ?? planningSettings):null)
                 {
                     depthRequested=message.planning_settings??planningSettings;

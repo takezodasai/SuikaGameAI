@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
@@ -43,12 +43,16 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
     readonly List<GameObject> pendingRemoval = new List<GameObject>();
     readonly List<PhysicsMaterial2D> materials = new List<PhysicsMaterial2D>();
     readonly Dictionary<FruitEvolution, long> ids = new Dictionary<FruitEvolution, long>();
-    readonly List<FruitEvolution> goCandidates=new List<FruitEvolution>();
+    struct GoCandidate {public FruitEvolution fruit;public Transform transform;}
+    readonly List<GoCandidate> goCandidates=new List<GoCandidate>();
+    readonly List<MonoBehaviour> copyScripts=new List<MonoBehaviour>();
+    readonly List<Renderer> copyRenderers=new List<Renderer>();
+    readonly List<Joint2D> copyJoints=new List<Joint2D>();
     void RegisterFruit(FruitEvolution fruit,long id)
     {
         ids.Add(fruit,id);
         // These private clones never change tag. Preserve the legacy uppercase tag rule.
-        if(fruit.CompareTag("Fruit"))goCandidates.Add(fruit);
+        if(fruit.CompareTag("Fruit"))goCandidates.Add(new GoCandidate {fruit=fruit,transform=fruit.transform});
     }
     readonly int[] scores;
     readonly float gameOverHeight;
@@ -80,11 +84,15 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
         using(MctsPerformance.Measure("object_copy")) {
 
         // Validate BEFORE Instantiate: unknown Awake/OnEnable could have global side effects.
-        foreach (var script in source.GetComponentsInChildren<MonoBehaviour>(true))
+        // Reuse only enumeration buffers, never physics objects or solver state.
+        if(MctsPerformance.ExactOptimizations)source.GetComponentsInChildren<MonoBehaviour>(true,copyScripts);
+        var sourceScripts=MctsPerformance.ExactOptimizations?copyScripts:(IEnumerable<MonoBehaviour>)source.GetComponentsInChildren<MonoBehaviour>(true);
+        foreach (var script in sourceScripts)
             if (script == null || !(script is FruitEvolution || script is Danse ||
                 script is Fruit || script is FruitCollisionHandler))
                 throw new InvalidOperationException("Unsupported prediction script on " + source.name);
-        if (source.GetComponentsInChildren<Joint2D>(true).Length != 0 || source.transform.childCount != 0)
+        if(MctsPerformance.ExactOptimizations)source.GetComponentsInChildren<Joint2D>(true,copyJoints);
+        if ((MctsPerformance.ExactOptimizations?copyJoints.Count:source.GetComponentsInChildren<Joint2D>(true).Length) != 0 || source.transform.childCount != 0)
             throw new InvalidOperationException("Prediction currently supports inspected flat collider objects only: " + source.name);
         var clone = Object.Instantiate(source, staging.transform);
         clone.transform.position = source.transform.position;
@@ -92,8 +100,9 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
         clone.transform.localScale = source.transform.lossyScale;
         owned.Add(clone);
         if(!freshPrefab) sourceCopies[source]=clone;
-        foreach (Renderer renderer in clone.GetComponentsInChildren<Renderer>(true)) renderer.enabled = false;
-        foreach (var script in clone.GetComponents<MonoBehaviour>()) script.enabled = false;
+        if(MctsPerformance.ExactOptimizations){clone.GetComponentsInChildren<Renderer>(true,copyRenderers);clone.GetComponents<MonoBehaviour>(copyScripts);}
+        foreach (Renderer renderer in MctsPerformance.ExactOptimizations?copyRenderers:(IEnumerable<Renderer>)clone.GetComponentsInChildren<Renderer>(true)) renderer.enabled = false;
+        foreach (var script in MctsPerformance.ExactOptimizations?copyScripts:(IEnumerable<MonoBehaviour>)clone.GetComponents<MonoBehaviour>()) script.enabled = false;
         var fruit = clone.GetComponent<FruitEvolution>();
         if (fruit != null)
         {
@@ -199,7 +208,8 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
         {
             PredictionDiagnostics.Removed(fruit.GetComponent<FruitEvolution>(), "deactivated");
             fruit.SetActive(false);
-            goCandidates.Remove(fruit.GetComponent<FruitEvolution>());
+            var evolution=fruit.GetComponent<FruitEvolution>();
+            for(int i=goCandidates.Count-1;i>=0;i--)if(goCandidates[i].fruit==evolution)goCandidates.RemoveAt(i);
         }
         pendingRemoval.Clear();
 
@@ -211,10 +221,11 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
 
         if(MctsPerformance.Optimized)
         {
-            foreach(var fruit in goCandidates)
+            foreach(var entry in goCandidates) {var fruit=entry.fruit;
                 // Same conjunction as CanTriggerGameOver; cheap managed exclusions first.
                 if(fruit.HasCollided && !fruit.IsPreview && !fruit.IsMerging &&
-                    fruit.transform.position.y>gameOverHeight && fruit.gameObject.activeInHierarchy) return true;
+                    (MctsPerformance.ExactOptimizations?entry.transform:fruit.transform).position.y>gameOverHeight && fruit.gameObject.activeInHierarchy) return true;
+            }
         }
         else foreach (var pair in ids)
             if (pair.Key.CompareTag("Fruit") && pair.Key.CanTriggerGameOver(gameOverHeight)) return true;
@@ -235,8 +246,12 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
             if (!fruit.gameObject.activeSelf || fruit.IsMerging || fruit.IsPreview) continue;
             var body = fruit.GetComponent<Rigidbody2D>();
             if (body == null) throw new InvalidOperationException("Prediction board fruit has no body");
+            // Read each native vector once; no simulation/callback occurs here.
+            var position=MctsPerformance.ExactOptimizations?body.position:Vector2.zero;
+            var velocity=MctsPerformance.ExactOptimizations?body.velocity:Vector2.zero;
             var value=new UDPCommunicatorUnity.BoardFruit { id = pair.Value, type = fruit.fruitType,
-                x = body.position.x, y = body.position.y, vx = body.velocity.x, vy = body.velocity.y,
+                x = MctsPerformance.ExactOptimizations?position.x:body.position.x, y = MctsPerformance.ExactOptimizations?position.y:body.position.y,
+                vx = MctsPerformance.ExactOptimizations?velocity.x:body.velocity.x, vy = MctsPerformance.ExactOptimizations?velocity.y:body.velocity.y,
                 angle = body.rotation, angular_velocity = body.angularVelocity, has_collided = fruit.HasCollided };
             if(measured!=null)UDPCommunicatorUnity.MeasureFruit(value,fruit,body,measured);
             result.Add(value);
@@ -377,6 +392,8 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
             limitation = "Cold contact cache; merges retired per tick; game-over checked per tick, live per rendered Update. Not bit-exact for arbitrary active contacts or multi-tick frames." };
         path=path??InitializePath(player,dt);
         var held=path.held;var knownNext=path.next;
+        // Owned clones retain components while held. Only isTrigger changes on release.
+        var heldTransform=held.transform;Collider2D cachedHeldShape=null;
         if(path.terminal || knownNext==null) throw new InvalidOperationException("Path is terminal or visible NEXT is unknown");
         result.drop_cooldown_seconds=path.cooldown;
         result.initial_contact_count=path.initialContacts;
@@ -392,7 +409,7 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
         // The next live FixedUpdate observes fixedTime + dt, not the rendered Update clock.
         double firstTickTime = path.nextTick;
         int waitBudget = (int)Math.Ceiling(Math.Max(0, path.allowed - firstTickTime) / dt);
-        int maxTicks = Mathf.CeilToInt(Mathf.Abs(target - held.transform.position.x) / (path.speed * dt)) + waitBudget + postSteps + 2;
+        int maxTicks = Mathf.CeilToInt(Mathf.Abs(target - (MctsPerformance.ExactOptimizations?heldTransform:held.transform).position.x) / (path.speed * dt)) + waitBudget + postSteps + 2;
         if (maxTicks > 10000) throw new InvalidOperationException("Prediction exceeds 10000-tick synchronous budget");
         using(MctsPerformance.Measure("sync_transforms")) Physics2D.SyncTransforms();
         if (Trace != null) Trace.Capture(score, false);
@@ -404,12 +421,13 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
             int tickScore=score; bool movedThisTick=false;
             if (!dropped)
             {
-                float old = held.transform.position.x;
-                var p = held.transform.position;
+                float old = (MctsPerformance.ExactOptimizations?heldTransform:held.transform).position.x;
+                var p = (MctsPerformance.ExactOptimizations?heldTransform:held.transform).position;
                 p.x = Mathf.MoveTowards(old, target, path.speed * dt);
-                held.transform.position = p;
+                (MctsPerformance.ExactOptimizations?heldTransform:held.transform).position = p;
                 using(MctsPerformance.Measure("sync_transforms")) Physics2D.SyncTransforms();
-                var shape = FruitColliderShape.Get(held);
+                var shape = MctsPerformance.ExactOptimizations&&cachedHeldShape!=null?cachedHeldShape:FruitColliderShape.Get(held);
+                if(MctsPerformance.ExactOptimizations)cachedHeldShape=shape;
                 if (shape.bounds.min.x < range.left_wall_inner || shape.bounds.max.x > range.right_wall_inner)
                     throw new InvalidOperationException("Prediction movement outside wall bounds");
                 foreach (var wall in walls)
@@ -433,7 +451,7 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
                     result.applied_x = p.x;
                     result.drop_success = dropped = true;
                     if(upcomingPrefab>=0)futurePreview=MakeFuturePreview(player,upcomingPrefab);
-                    knownNext.transform.position = held.transform.position;
+                    knownNext.transform.position = (MctsPerformance.ExactOptimizations?heldTransform:held.transform).position;
                     knownNext.SetActive(true);
                     // NEXT is a frozen display body. The real SpawnFruit creates a
                     // held (simulated, gravity-free) body and clamps a larger fruit.
@@ -450,7 +468,12 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
                 }
             }
             else { post++; }
-            using(MctsPerformance.Measure("sync_transforms")) Physics2D.SyncTransforms();
+            // A still-held movement/wait tick already synced immediately after its
+            // only Transform write. Bounds/Distance checks above are read-only and
+            // no Simulate/yield occurs between the two sites. Drop/post-drop ticks
+            // retain their original sync. Never skip a physical update.
+            if(!MctsPerformance.ExactOptimizations || dropped)
+                using(MctsPerformance.Measure("sync_transforms")) Physics2D.SyncTransforms();
             using(MctsPerformance.Measure("native_physics"))
                 if (!SimulateNative(dt)) throw new InvalidOperationException("Local PhysicsScene2D.Simulate failed");
             int gain=score-tickScore;
@@ -543,6 +566,7 @@ public sealed partial class SuikaPhysicsSimulator : IDisposable
             foreach (var material in materials) if (material != null) Object.DestroyImmediate(material);
             owned.Clear();materials.Clear();sourceCopies.Clear();pendingRemoval.Clear();ids.Clear();goCandidates.Clear();Trace=null;
         }
+        copyScripts.Clear();copyRenderers.Clear();copyJoints.Clear(); // Do not retain destroyed component wrappers.
         cleanupMs = timer.Elapsed.TotalMilliseconds;
 
         }

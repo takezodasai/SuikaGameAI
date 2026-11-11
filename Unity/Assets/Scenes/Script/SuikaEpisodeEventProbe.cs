@@ -16,12 +16,14 @@ public sealed class SuikaEpisodeEventProbe:MonoBehaviour {
             score.ResetScore();score.EpisodeEvents.Enabled=pass==1;trace.Clear();
             var scene=SceneManager.CreateScene("Event parity "+pass,new CreateSceneParameters(LocalPhysicsMode.Physics2D));SceneManager.SetActiveScene(scene);
             Spawn(9,100,scene);Spawn(9,100.01f,scene);Spawn(9,110,scene);Spawn(9,110.01f,scene);
+            // Register the four diagnostic actual fruits with the observation counters.
+            for(int i=0;i<4;i++)score.RecordDroppedFruit(9);
             var physics=scene.GetPhysicsScene2D();physics.Simulate(Time.fixedDeltaTime);trace.Add(State(scene));SceneManager.SetActiveScene(original);yield return null;
             var watermelons=new List<FruitEvolution>();foreach(var o in scene.GetRootGameObjects()){var f=o.GetComponent<FruitEvolution>();if(f!=null&&!f.IsMerging&&f.fruitType==10)watermelons.Add(f);}
             if(watermelons.Count!=2){failed=true;break;}
             for(int i=0;i<2;i++){watermelons[i].GetComponent<Rigidbody2D>().position=new Vector2(100+i*.01f,-100);}
             SceneManager.SetActiveScene(scene);physics.Simulate(Time.fixedDeltaTime);trace.Add(State(scene));SceneManager.SetActiveScene(original);yield return null;
-            string signature=string.Join("\n",trace);if(pass==0)baseline=signature;else{recorded=score.EpisodeEvents.Read();failed=signature!=baseline||recorded.watermelons_created!=2||recorded.watermelons_present!=0||recorded.double_watermelons!=1||recorded.events.Length!=7||score.GetScore()!=110;}
+            string signature=string.Join("\n",trace);if(pass==0)baseline=signature;else{recorded=score.EpisodeEvents.Read();failed=signature!=baseline||recorded.watermelons_created!=2||recorded.watermelons_present!=0||recorded.double_watermelons!=1||recorded.events.Length!=7||score.GetScore()!=110||!recorded.learning.known||recorded.learning.events.Length!=5;}
             yield return SceneManager.UnloadSceneAsync(scene);
         }
         SceneManager.SetActiveScene(original);var result=new Result {passed=!failed,error=failed?"Actual merge/event parity failed":"",physics_trace=baseline,actual_events=recorded};using(var f=new StreamWriter(new FileStream(output,FileMode.CreateNew)))f.Write(JsonUtility.ToJson(result));Application.Quit(failed?2:0);

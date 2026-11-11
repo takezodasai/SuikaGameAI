@@ -187,7 +187,7 @@ def selected_video_games(games,headless=False,view_game=None,view_games=None):
     return [f"game_{i:02d}" for i in indices]
 
 
-def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,seed=12345,headless=False,settings=None,view_game=None,main_audio=True,others_audio=False,launch_viewer=True,view_games=None,require_metadata=False,expected_go_ratio=None,training_metadata=True,max_episode_seconds=None,expected_rules_version=None,step_timeout=None,episode_events=False,keep_player_on_error=False,external_stop=None):
+def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,seed=12345,headless=False,settings=None,view_game=None,main_audio=True,others_audio=False,launch_viewer=True,view_games=None,require_metadata=False,expected_go_ratio=None,training_metadata=True,max_episode_seconds=None,expected_rules_version=None,step_timeout=None,episode_events=False,keep_player_on_error=False,external_stop=None,decision_capsules=False):
     if keep_player_on_error and headless:raise ValueError("Keeping a failed Player requires visible GUI mode")
     if max_episode_seconds is not None and (not isinstance(max_episode_seconds,(float,int)) or not 0<max_episode_seconds<=86400):raise ValueError("Invalid episode wall limit")
     if not training_metadata and (require_metadata or expected_go_ratio is not None or expected_rules_version is not None):raise ValueError("Metadata must be enabled to verify the environment")
@@ -196,6 +196,7 @@ def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,se
     if type(episodes) is not int or episodes<1 or type(max_steps) is not int or max_steps<1:
         raise ValueError("episodes/max_steps must be positive")
     settings=validate_planning_settings(settings or {})
+    if decision_capsules and settings['execution_mode']!='sync':raise ValueError('Decision capsules currently cover synchronous planning only')
     if settings["execution_mode"]!="sync" and games!=1:raise ValueError("Frame execution prototype supports one game only")
     if (settings["mcts_extended_budget"] or settings["mcts_budget_mode"]!="fixed" or settings["mcts_widening"] or settings["pair_coverage_iterations"]>0 or settings["candidate_policy"]=="coarse-root" or settings["action_order_policy"]!="index" or settings["expansion_policy"]!="legacy" or settings["tree_policy"]!="chance" or settings["rollout_policy"]!="random" or settings["mcts_common_chance"]) and games!=1:raise ValueError("Experimental tree/rollout sampling supports one game only")
     if settings["candidate_policy"]!="grid" and games!=1:raise ValueError("Board-five prototype supports one game only")
@@ -220,6 +221,7 @@ def run_parallel(exe,output,games=2,episodes=1,max_steps=1000,base_port=18000,se
             command=player_command(exe,spec,output/(spec.game_id+"_player.log"),headless,
                 audio=False if headless else main_audio if spec.game_id=="game_00" else others_audio,
                 video_map=video_maps.get(spec.game_id),episode_events=episode_events)
+            if decision_capsules:command.extend(['-suikaDecisionCapsules',str(output/(spec.game_id+'_decisions.jsonl'))])
             children.append(subprocess.Popen(command,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0)))
         (output/"run.json").write_text(json.dumps(dict(schema_version=4,episode_events=episode_events,training_metadata=training_metadata,require_metadata=require_metadata,expected_go_ratio=expected_go_ratio,expected_rules_version=expected_rules_version,exe_sha256=__import__("hashlib").sha256(exe.read_bytes()).hexdigest(),evaluation_version=("step8b-uct-"+("value" if (settings or {}).get("ai_mode")=="mcts_value" else "reward")) if (settings or {}).get("ai_mode") in ("mcts","mcts_value") else ("step8a-depth2-"+(settings or {}).get("search_leaf","reward")) if (settings or {}).get("ai_mode")=="two_step" else "step7c-v1-value-points" if (settings or {}).get("ai_mode")=="value" else "step5-v3-score-roughness",seed_mode="continuous_after_worker_seed",run_id=run_id,video_maps=video_maps,video_game=video_game,video_map=video_map,exe=str(exe),headless=headless,
             settings=settings,episodes=episodes,max_steps=max_steps,max_episode_seconds=max_episode_seconds,step_timeout=step_timeout,workers=[dict(**s.__dict__,pid=p.pid) for s,p in zip(specs,children)]),indent=2),encoding="utf-8")

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
@@ -10,6 +10,7 @@ public sealed class MctsPerformance
     // Internal A/B diagnostic switch, never a gameplay/physics setting.
     internal static bool Optimized=true;
     internal static bool VerifyStates;
+    internal static bool ExactOptimizations=true; // Private prediction objects only; A/B diagnostic switch.
     internal static bool SuppressProfiler;
 
     public readonly Dictionary<string,Metric> metrics=new Dictionary<string,Metric>();

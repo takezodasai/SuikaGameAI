@@ -34,6 +34,20 @@ class OvernightTests(unittest.TestCase):
    with patch('suika_ai.overnight_collection.run_job',side_effect=AssertionError('Must not replay')):
     result=collect({},out,True,runner=lambda *a:(_ for _ in ()).throw(AssertionError('Must not replay')))
    self.assertEqual(result['usable_games'],4);self.assertEqual(result['seed_duplicates'],0)
+ def test_four_workers_refill_unique_slots_and_resume(self):
+  with tempfile.TemporaryDirectory() as root:
+   cfg=self.config(root);cfg.update(workers=4,max_jobs=8);out=Path(root)/'collect';barrier=threading.Barrier(4);seen=[];lock=threading.Lock()
+   def runner(c,j,slot,folder,stop):
+    folder.mkdir()
+    with lock:seen.append((j['index'],slot,c['base_port']+slot*2,j['game_seed']))
+    barrier.wait(timeout=5)
+    r=dict(job=j['index'],game_seed=j['game_seed'],natural_go=False,valid_for_return_learning=False,final_score=None,steps=3,errors=[],attempt=str(folder));atomic_json(folder.parent/(folder.name+'_result.json'),r);return r
+   r=collect(cfg,out,runner=runner)
+   self.assertEqual(r['jobs'],8);self.assertEqual(r['usable_games'],0);self.assertEqual(r['seed_duplicates'],0)
+   self.assertEqual({s for _,s,_,_ in seen},{0,1,2,3});self.assertEqual({p for _,_,p,_ in seen},{45100,45102,45104,45106})
+   self.assertEqual(len({seed for _,_,_,seed in seen}),8)
+   r=collect({},out,True,runner=lambda *a:(_ for _ in ()).throw(AssertionError('Must not repeat completed jobs')))
+   self.assertEqual(r['jobs'],8)
  def test_deadline_boundary_preserves_partial(self):
   with tempfile.TemporaryDirectory() as root:
    cfg=self.config(root);cfg['hours']=.00001;out=Path(root)/'collect'

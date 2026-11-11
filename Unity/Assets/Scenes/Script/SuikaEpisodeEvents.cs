@@ -22,10 +22,12 @@ public sealed class SuikaEpisodeEvents {
         public string source="actual_game",version="step8u-events-v1";
         public bool known;public int drop_count,watermelons_created,watermelons_present,double_watermelons;
         public Entry[] events;
+        public SuikaLearningMilestones.Snapshot learning;
     }
     public bool Enabled {get;set;}
     int drops,created,present,doubles; readonly List<Entry> events=new List<Entry>();
-    public void Reset(){drops=created=present=doubles=0;events.Clear();}
+    readonly SuikaLearningMilestones learning=new SuikaLearningMilestones();
+    public void Reset(){drops=created=present=doubles=0;events.Clear();learning.Reset();}
     void Emit(string kind,int score,double time,Location location=null){events.Add(new Entry {event_id=events.Count+1,kind=kind,location=location,score=score,drop_count=drops,fixed_time=time,watermelons_created=created,watermelons_present=present,double_watermelons=doubles});}
     void Created(int score,double time,Location location){int before=present;created++;present++;
         Emit("watermelon_created",score,time,location);
@@ -33,10 +35,11 @@ public sealed class SuikaEpisodeEvents {
         if(created==2)Emit("second_watermelon",score,time,location);
         if(before<2&&present>=2)Emit("two_watermelons_present",score,time,location);
     }
-    public void Drop(int type,int score,double time,Location location=null){if(!Enabled)return;drops++;if(type==10)Created(score,time,location);}
+    public void Drop(int type,int score,double time,Location location=null){if(!Enabled)return;drops++;if(type==10)Created(score,time,location);learning.Drop(type,score,drops,time);}
     public void Merge(int from,int to,int score,double time,Location location=null){if(!Enabled)return;
         if(to==10)Created(score,time,location);
         if(from==10&&to==-1){present-=2;doubles++;Emit("watermelon_pair_disappeared",score,time,location);Emit("double_watermelon",score,time,location);}
+        learning.Merge(from,to,score,drops,time);
     }
-    public Snapshot Read(){return new Snapshot {known=Enabled,drop_count=drops,watermelons_created=created,watermelons_present=present,double_watermelons=doubles,events=Enabled?events.ToArray():new Entry[0]};}
+    public Snapshot Read(){return new Snapshot {known=Enabled,drop_count=drops,watermelons_created=created,watermelons_present=present,double_watermelons=doubles,events=Enabled?events.ToArray():new Entry[0],learning=learning.Read(Enabled)};}
 }

@@ -27,6 +27,22 @@ public static class SuikaWorkerBuild
         if(File.Exists("Builds/Step8AE/SuikaGameAI.exe"))throw new InvalidOperationException("STEP8AE destination exists; preserve the existing Player");
         BuildAt("Builds/Step8AE/SuikaGameAI.exe");
     }
+    public static void BuildSyncOptimized() {
+        if(File.Exists("Builds/SyncOptimized_03/SuikaGameAI.exe"))throw new InvalidOperationException("Optimization Player already exists");
+        BuildAt("Builds/SyncOptimized_03/SuikaGameAI.exe");
+    }
+    public static void BuildMergeGoValidation() {
+        if(File.Exists("Builds/MergeGoCheck_01/SuikaGameAI.exe"))throw new InvalidOperationException("GO diagnostic Player already exists");
+        BuildAt("Builds/MergeGoCheck_01/SuikaGameAI.exe");
+    }
+    public static void BuildPhysicsThreadValidation() {
+        if(Directory.Exists("Builds/PhysicsThreads_01"))throw new InvalidOperationException("Thread diagnostic destination already exists");
+        BuildAt("Builds/PhysicsThreads_01/SuikaGameAI.exe");
+    }
+    public static void BuildLearningEventValidation() {
+        if(Directory.Exists("Builds/LearningEvents_02"))throw new InvalidOperationException("Learning event Player already exists");
+        BuildAt("Builds/LearningEvents_02/SuikaGameAI.exe");
+    }
     public static bool IsProtectedDestination(string destination) {
         string project=Directory.GetParent(Application.dataPath).FullName;
         if(File.Exists(Path.Combine(project,"Builds/Step8X/SuikaGameAI.exe"))&&string.Equals(Path.GetFullPath(destination),Path.GetFullPath(Path.Combine(project,"Builds/Step8X/SuikaGameAI.exe")),StringComparison.OrdinalIgnoreCase))return true;

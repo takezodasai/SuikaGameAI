@@ -140,7 +140,7 @@ def collect(config,output,resume=False,runner=run_job):
             saved=json.loads((out/'collection.json').read_text());config=saved
             if player_identity(config['exe'])!=config.get('player_files',player_identity(config['exe'])) or hashlib.sha256(Path(config['exe']).read_bytes()).hexdigest()!=config['exe_sha256']:raise ValueError('Player changed; cannot resume the same collection')
         else:
-            if not 1<=config['workers']<=2:raise ValueError('Collection supports 1 or 2 independent Players')
+            if type(config['workers']) is not int or not 1<=config['workers']<=4:raise ValueError('Collection supports 1..4 independent Players')
             if not 0<config['think_seconds']<=240 or not config['think_seconds']+60<=config['communication_timeout']<=720:raise ValueError('Invalid thinking/step timeout')
             if type(config['max_steps']) is not int or config['max_steps']<1:raise ValueError('Invalid max steps')
             if not config['profiles']:raise ValueError('Empty collection profiles')
