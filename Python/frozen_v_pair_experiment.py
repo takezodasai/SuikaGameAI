@@ -15,8 +15,11 @@ SCORING_FILES=['Python/frozen_model_actual_play.py','Python/action_decision_mode
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-def seed_plan():
-    reserved=json.loads(Path('Python/outputs/qv_compare_01/latest/test_reservation_manifest.json').read_text())['episodes']
+def seed_plan(reserved=None):
+    # Production remains fail-closed if its private reservation manifest is absent.
+    # Tests inject a synthetic reservation list instead of depending on local outputs.
+    if reserved is None:
+        reserved=json.loads(Path('Python/outputs/qv_compare_01/latest/test_reservation_manifest.json').read_text())['episodes']
     used={e['seed'] for e in reserved}|{882610501,882610502,882610391,882610392}
     rng=random.Random(2026103101);seeds=[]
     while len(seeds)<12:

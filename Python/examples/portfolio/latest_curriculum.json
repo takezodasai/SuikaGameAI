@@ -1,0 +1,334 @@
+{
+  "date": "2026-11-12",
+  "source_session": "watermelon_material_practice_20261112_043529_31fc5afd",
+  "actor_sha256": "057a21215a6c0d7620245c0761b806f34fd07d61260f9a1c59c1e89621b59eee",
+  "iterations": 256,
+  "depth": 4,
+  "candidates": 5,
+  "used_seconds": 60318.281,
+  "stop": "Ctrl+C drain; no forced interruption",
+  "complete_games": 224,
+  "raw_terminal_records_audited": 224,
+  "groups": {
+    "normal": {
+      "games": 112,
+      "mean_additional": 2124.4464285714284,
+      "median_additional": 2095.5,
+      "min_additional": 1311,
+      "max_additional": 3226,
+      "new_watermelons": 26,
+      "material_goals": {
+        "watermelon_one": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 26,
+          "observed_rate": 0.23214285714285715,
+          "new_attainment_followup": {
+            "games": 26,
+            "mean_survival_drops": 68.96153846153847,
+            "mean_additional_points": 611.7692307692307
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "watermelon_pineapple": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 13,
+          "observed_rate": 0.11607142857142858,
+          "new_attainment_followup": {
+            "games": 13,
+            "mean_survival_drops": 42.69230769230769,
+            "mean_additional_points": 371.7692307692308
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "watermelon_melon": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "watermelon_melon_pineapple": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "watermelon_two_melons": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "two_watermelons": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "double_watermelon": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        }
+      }
+    },
+    "approximate": {
+      "games": 112,
+      "mean_additional": 537.7767857142857,
+      "median_additional": 516.5,
+      "min_additional": 0,
+      "max_additional": 1541,
+      "new_watermelons": 28,
+      "material_goals": {
+        "watermelon_one": {
+          "initial": 84,
+          "at_risk": 28,
+          "evaluable": 28,
+          "unknown": 0,
+          "newly_achieved": 28,
+          "observed_rate": 1.0,
+          "new_attainment_followup": {
+            "games": 28,
+            "mean_survival_drops": 73.14285714285714,
+            "mean_additional_points": 657.8571428571429
+          },
+          "initial_attainment_followup": {
+            "games": 84,
+            "mean_survival_drops": 53.55952380952381,
+            "mean_additional_points": 456.70238095238096
+          }
+        },
+        "watermelon_pineapple": {
+          "initial": 33,
+          "at_risk": 79,
+          "evaluable": 79,
+          "unknown": 0,
+          "newly_achieved": 35,
+          "observed_rate": 0.4430379746835443,
+          "new_attainment_followup": {
+            "games": 35,
+            "mean_survival_drops": 48.48571428571429,
+            "mean_additional_points": 402.45714285714286
+          },
+          "initial_attainment_followup": {
+            "games": 33,
+            "mean_survival_drops": 50.42424242424242,
+            "mean_additional_points": 435.3333333333333
+          }
+        },
+        "watermelon_melon": {
+          "initial": 28,
+          "at_risk": 84,
+          "evaluable": 84,
+          "unknown": 0,
+          "newly_achieved": 5,
+          "observed_rate": 0.05952380952380952,
+          "new_attainment_followup": {
+            "games": 5,
+            "mean_survival_drops": 25.2,
+            "mean_additional_points": 187
+          },
+          "initial_attainment_followup": {
+            "games": 28,
+            "mean_survival_drops": 28.214285714285715,
+            "mean_additional_points": 203.67857142857142
+          }
+        },
+        "watermelon_melon_pineapple": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 1,
+          "observed_rate": 0.008928571428571428,
+          "new_attainment_followup": {
+            "games": 1,
+            "mean_survival_drops": 15,
+            "mean_additional_points": 69
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "watermelon_two_melons": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "two_watermelons": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        },
+        "double_watermelon": {
+          "initial": 0,
+          "at_risk": 112,
+          "evaluable": 112,
+          "unknown": 0,
+          "newly_achieved": 0,
+          "observed_rate": 0.0,
+          "new_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          },
+          "initial_attainment_followup": {
+            "games": 0,
+            "mean_survival_drops": null,
+            "mean_additional_points": null
+          }
+        }
+      }
+    }
+  },
+  "models": [
+    {
+      "generation": "gen_d9eb9e9bef0e",
+      "sha256": "84ffc9ae40fbe70b6c93fdd08a181128915e38dc749f286a659abad6e5760490",
+      "states": 52422,
+      "train_groups": 575,
+      "validation_groups": 145,
+      "unit_points": 10.0,
+      "states_with_bonus": 1768,
+      "max_bonus_points": 40.0,
+      "validation_loss": 1.5974457263946533,
+      "validation_match": 0.3030172288417816
+    },
+    {
+      "generation": "gen_e2285d9c9e9d",
+      "sha256": "5f503df0fb75f44fd059d3a5b6a283f881894d4648ffb0c9171cd3f91d3742d8",
+      "states": 52422,
+      "train_groups": 575,
+      "validation_groups": 145,
+      "unit_points": 0.0,
+      "states_with_bonus": 0,
+      "max_bonus_points": 0.0,
+      "validation_loss": 1.5974458456039429,
+      "validation_match": 0.3031249940395355
+    }
+  ],
+  "compound_examples": [
+    {
+      "first": {
+        "drop_count": 52,
+        "event_id": 4,
+        "evidence": "atomic_actual_callback",
+        "fixed_time": 53.05999881401658,
+        "initial": false,
+        "kind": "watermelon_melon_pineapple",
+        "melons": 1,
+        "observation_index": 156,
+        "pineapples": 1,
+        "score": 3348,
+        "tick": 2648,
+        "watermelons": 1
+      },
+      "final_score": 3417,
+      "additional_score": 560,
+      "post_points": 69,
+      "post_drops": 15
+    }
+  ]
+}

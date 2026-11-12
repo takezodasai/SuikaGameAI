@@ -1,0 +1,9 @@
+{
+  "model_source_sha256": "057a21215a6c0d7620245c0761b806f34fd07d61260f9a1c59c1e89621b59eee",
+  "source_seed": 775018531,
+  "source_initial8": "0,1,1,1,2,3,1,0",
+  "source_split": "train/development",
+  "sample_kind": "public observation from an actual game; inference demonstration only",
+  "independent_evaluation": false,
+  "private_future_included": false
+}

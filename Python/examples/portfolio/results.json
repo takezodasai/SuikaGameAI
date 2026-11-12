@@ -1,0 +1,62 @@
+{
+  "kind": "descriptive collection summary, not paired model comparison",
+  "audited_date": "2026-11-11",
+  "settings": {
+    "iterations": 256,
+    "depth": 4,
+    "candidates": 5,
+    "learned_rollout_mixture": 0.5
+  },
+  "cohorts": [
+    {
+      "session": "rollout_selfplay_20261103_183911_bb3d49e4",
+      "actor_sha256": "81d9f3b581a7b0c7533096c01c63bdc57ab6c300f467e5c4206b42c60eb3111e",
+      "games": 155,
+      "mean_score": 2177.8387096774195,
+      "median_score": 2118,
+      "max_score": 3198,
+      "min_score": 1223,
+      "new_watermelons": 43,
+      "double_watermelons": 0
+    },
+    {
+      "session": "rollout_selfplay_20261105_013708_7ef29f79",
+      "actor_sha256": "81d9f3b581a7b0c7533096c01c63bdc57ab6c300f467e5c4206b42c60eb3111e",
+      "games": 161,
+      "mean_score": 2137.55900621118,
+      "median_score": 2052,
+      "max_score": 3341,
+      "min_score": 1301,
+      "new_watermelons": 39,
+      "double_watermelons": 0
+    },
+    {
+      "session": "rollout_selfplay_20261106_021012_897a0c88",
+      "actor_sha256": "1e33f567e8496e7d7f6200f258887c3465778882192af84e25754e849ae3df6e",
+      "games": 160,
+      "mean_score": 2140.95625,
+      "median_score": 2114.0,
+      "max_score": 3200,
+      "min_score": 909,
+      "new_watermelons": 45,
+      "double_watermelons": 0
+    },
+    {
+      "session": "rollout_selfplay_20261107_171123_1358a9a3",
+      "actor_sha256": "057a21215a6c0d7620245c0761b806f34fd07d61260f9a1c59c1e89621b59eee",
+      "games": 54,
+      "mean_score": 2077.074074074074,
+      "median_score": 2054.5,
+      "max_score": 2964,
+      "min_score": 1298,
+      "new_watermelons": 7,
+      "double_watermelons": 0
+    }
+  ],
+  "raw_games_in_repository": false,
+  "limitations": [
+    "Different seeds and policy versions; means do not establish causal model improvement.",
+    "Censored games excluded from score statistics.",
+    "No double-watermelon success observed in these sessions."
+  ]
+}

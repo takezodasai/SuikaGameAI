@@ -1,0 +1,11 @@
+{
+  "sources": {
+    "Python/examples/portfolio/observation.json": "231b450bc490e0919529cccdb7cf647e6ac8aa5e24ad4fcad005a4f19f23cc58",
+    "Python/examples/portfolio/results.json": "cc6fca8c8d4fa22c960bb59806bcc25161708aa47e78237578d843ca772a8cee",
+    "Python/examples/portfolio/render_overview.py": "64e9dd2e9ba9167178b44a9802044dc4a034288e4fa7db61b485090eecc2a226"
+  },
+  "assets": {
+    "docs/assets/overview.png": "2f182d98945cab6171d3b722d580d543473a207ab325a8c09d1d96fc762cef2e",
+    "docs/assets/overview.svg": "26a03d469cef706798ff666ee3a20142a729c84b2a50cb93ae3bfc9b719b514e"
+  }
+}

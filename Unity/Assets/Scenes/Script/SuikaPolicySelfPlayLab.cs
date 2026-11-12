@@ -9,7 +9,7 @@ using UnityEngine.LowLevel;
 // No changes to game rules, planners, prefabs, or ordinary play.
 public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
     [Serializable] class Config {
-        public string policy_model;public float mixture=.5f;public string fixture,output,ridge_model,mode="baseline",final_selection="legacy";public bool normal_start;public int game_seed=20261031;
+        public string policy_model;public float mixture=.5f;public string fixture,output,ridge_model,mode="baseline",final_selection="legacy";public bool normal_start,material_progress;public int game_seed=20261031;
         public int future_seed=20261031,search_seed=8191,iterations=128,depth=4,max_drops=80;
         public float max_seconds=180,first_x=-1;
     }
@@ -84,7 +84,7 @@ public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
         }catch(Exception e){Fail(e);}
     }
     void FixedUpdate(){
-        if(!running)return;tick++;if(game.isGameOver||!active||command.drop_tick>=0)return;
+        if(!running)return;tick++;if(cfg.material_progress)ScoreManager.Instance.EpisodeEvents.MaterialTick(tick);if(game.isGameOver||!active||command.drop_tick>=0)return;
         try{
             var range=player.GetDropRange();float target=Mathf.Lerp(range.min_x,range.max_x,command.x),nx=Mathf.MoveTowards(player.currentFruit.transform.position.x,target,player.EffectiveAIMoveSpeed*Time.fixedDeltaTime);string error;
             if(!player.TryMoveHeldTo(nx,range,out error))throw new Exception(error);if(nx!=target||!player.CanDropFruit)return;
@@ -130,6 +130,7 @@ public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
         if(cfg.normal_start){UnityEngine.Random.InitState(cfg.game_seed);for(int i=0;i<2;i++)UnityEngine.Random.Range(0,player.fruits.Length);game.ResetGame("staged-normal");Time.timeScale=0;yield return null;yield return null;}else yield return Restore();
         Time.timeScale=0;player.StepControlLocked=true;ScoreManager.Instance.EpisodeEvents.Enabled=true;
         var root=udp.CounterfactualSnapshot();initialScore=root.score;ScoreManager.Instance.SendMessage("UpdateScoreUI",SendMessageOptions.RequireReceiver);foreach(var f in root.fruits)if(f.type==10)initialWatermelons++;
+        if(cfg.material_progress){var inventory=new int[11];foreach(var f in root.fruits)inventory[f.type]++;ScoreManager.Instance.EpisodeEvents.BeginMaterialObservation(inventory,root.score,Time.fixedTimeAsDouble);}
         if(initialWatermelons<0)throw new Exception("Invalid watermelon count");maxPresent=initialWatermelons;
         var baseline=ScoreManager.Instance.EpisodeEvents.Read();baseCreated=baseline.watermelons_created;baseDoubles=baseline.double_watermelons;eventIndex=baseline.events.Length;
         if(!cfg.normal_start)UnityEngine.Random.InitState(cfg.future_seed); // NEW experimental future, never historical RNG claim.

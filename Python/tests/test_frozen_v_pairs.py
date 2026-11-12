@@ -4,7 +4,8 @@ from frozen_v_pair_experiment import reserve_collision,seed_plan
 
 class FrozenVPairsTests(unittest.TestCase):
     def test_fixed_seed_plan_excludes_reserved_seeds(self):
-        a,r=seed_plan();b,_=seed_plan();self.assertEqual(a,b);self.assertEqual(len(a),12);self.assertEqual(len(set(a)),12);self.assertFalse(set(a)&{e['seed'] for e in r})
+        baseline,_=seed_plan([]);reserved=[dict(seed=baseline[0],initial_sequence='0,1,2,3,4,0,1,2')]
+        a,r=seed_plan(reserved);b,_=seed_plan(reserved);self.assertEqual(a,b);self.assertEqual(len(a),12);self.assertEqual(len(set(a)),12);self.assertFalse(set(a)&{e['seed'] for e in r})
     def test_prefix_guard_does_not_impute_missing_fruits(self):
         p=dict(reserved_prefixes=['0,1,2,3,4,0,1,2'])
         self.assertFalse(reserve_collision([0,1],p));self.assertTrue(reserve_collision([0,1,2,3,4,0,1,2],p))
