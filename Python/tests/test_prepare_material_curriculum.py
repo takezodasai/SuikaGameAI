@@ -24,7 +24,10 @@ class PrepareMaterialTests(unittest.TestCase):
             out=root/'prepared';r=prepare_progress(data,out,max_roots=3,source_limit=4)
             self.assertEqual(r['independent_source_groups'],2)
             m=json.loads((out/'manifest.json').read_text())
-            self.assertFalse((out/'replay.jsonl').exists());self.assertEqual(m['replay_file'],str(replay))
+            self.assertFalse((out/'replay.jsonl').exists())
+            # GitHub Windows runners can spell TEMP with an 8.3 alias (RUNNER~1).
+            # Compare file identity, not the spelling of the same path.
+            self.assertTrue(Path(m['replay_file']).samefile(replay))
             self.assertNotIn(4,m['selection']['selected_source_seeds'])
             self.assertEqual(m['phase_groups']['watermelon_one'],2)
             with self.assertRaises(FileExistsError):prepare_progress(data,out,max_roots=3,source_limit=4)
