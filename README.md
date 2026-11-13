@@ -1,114 +1,37 @@
 # SuikaGameAI
 
-**Unityの物理シミュレーションで未来を探索し、自己対戦の経験から方策を更新するスイカゲームAI。**
-
-Physics-based MCTS and versioned self-play learning, built with Unity / C# and Python.
+Unityの物理シミュレーションとMCTS、学習済み方策を使って自動プレイするスイカゲームAIです。
+高得点とダブルスイカ達成を目指して開発しています。
 
 [![Python checks](https://github.com/takezodasai/SuikaGameAI/actions/workflows/python-tests.yml/badge.svg?branch=main)](https://github.com/takezodasai/SuikaGameAI/actions/workflows/python-tests.yml)
 
-![実プレイログの盤面を可視化した概要。ゲーム画面の録画ではありません。](docs/assets/overview.png)
+## 実行方法
 
-[AIのプレイを見る](#aiのプレイを見る) · [設計と担当範囲](docs/ENGINEERING.md) · [実測結果](docs/RESULTS.md) · [最新の材料育成実験](docs/LATEST_CURRICULUM_RESULTS.md) · [実行・テスト](docs/REPRODUCIBILITY.md)
+1. このリポジトリを取得し、`Unity/` を **Unity 2022.3.21f1** で開きます。
+2. [ビルド手順](docs/GUI_MODEL_PREVIEW.md#開発者向けpython不要の専用playerをビルド)に従って、AI専用Playerを作成します。
+3. `Unity/Builds/StandaloneAiDemo_02/AI-Demo.exe` を起動します。
 
-## 何を作っているか
+AIが自動でプレイします。**Escで停止し、結果画面でもう一度Escを押すと終了**します。
+ビルド後の実行にはPythonやUnity Editorは不要です。exeと隣接ファイルは同じフォルダに置いてください。
 
-既存のUnityゲーム基盤に、MCTS、独立した物理予測、Pythonとの通信、並列実験、学習・検証の仕組みを追加しています。
-最終目標は高得点とダブルスイカの安定達成です。**ダブルスイカは未達成で、学習モデルが基準MCTSより強いこともまだ確認できていません。**
+- 画面：得点・落下数・思考時間・探索設定を表示
+- 設定：MCTS256回、深さ4、固定5候補、学習rollout混合率50%
+- 操作：AI専用。手動プレイ不可。思考中は画面が一時停止します
 
-| 技術的な取り組み | 実装内容 |
-|---|---|
-| 物理を利用する探索 | 独立したPhysics2D環境で落下・合体・GOを予測し、MCTSで候補を比較 |
-| 長時間実行の安定化 | 予測Sceneの解放、メモリ・通信の監査、ジョブ単位の中断・再開 |
-| 実験の再現性 | ゲーム乱数と探索乱数の分離、設定・モデルSHA固定、自然GOと打ち切りの区別 |
-| 経験からの学習 | 小型方策によるrollout、実測returnを使う重み付き模倣学習、世代別保存 |
-| 材料育成の観測 | スイカ＋メロン／パイナップルなどを、実ゲームの合体通知で記録 |
+exeは素材の再配布条件が未確認のため、一般配布していません。[配布について](docs/AI_DEMO_DISTRIBUTION.md)
 
-## AIのプレイを見る
+## 構成
 
-**目標の操作は「ZIPを展開して、AI-Demo.exeをダブルクリック」だけです。**
-PythonやUnity Editorを入れずに、画面付きの自動プレイを実行できる専用ビルドを追加しました。
-果物・得点・NEXTが表示され、AIが自動で落下位置を選びます。手動プレイは無効、Escで停止できます。
+- **Unity / C#**：ゲーム、物理予測、MCTS、自動プレイ
+- **Python**：データ収集、方策学習、評価・テスト
 
-**現在、ダウンロード用exeの一般公開は保留中です。** 既存のゲーム基盤・画像・音の再配布条件を確認しています。
-非公式表記やAI専用化だけで配布が許可されるとは扱いません。
-[動作とビルド手順](docs/GUI_MODEL_PREVIEW.md) / [配布前の確認事項](docs/AI_DEMO_DISTRIBUTION.md)
+既存のUnityゲーム基盤にAI機能を追加した個人開発です。実装・調査には生成AIも活用しています。
+ダブルスイカは未達成で、学習モデルによる強さの改善は検証中です。
 
-| 画面で分かること | 内容 |
-|---|---|
-| AIの判断 | 学習方策を組み込んだMCTSが自動プレイ |
-| ゲームの進行 | 得点・落下数・NEXT・果物の合体 |
-| 探索の負荷 | 探索回数・深さ・直近の思考時間 |
-| 操作方法 | Escで停止。終了結果を確認して閉じる |
+## 詳細
 
-学習済みモデルは同梱済み。256回探索・深さ4・固定5候補、rolloutの50%で学習方策を使います。
-同期探索中は画面が一時停止します。この世代が従来MCTSより強いことはまだ確認できていません。
-
-## システム構成
-
-```mermaid
-flowchart LR
-  subgraph Unity["Unity / C#"]
-    G[実ゲーム・公開盤面] --> T[MCTS]
-    T <--> P[独立 Physics2D 予測]
-    T --> A[落下操作]
-    A --> G
-    G --> L[実ゲーム履歴・材料イベント]
-  end
-  subgraph Python["Python"]
-    J[並列ジョブ管理・設定固定] --> G
-    L --> V[終了・得点・データ分割の検証]
-    V --> F[オフライン方策学習]
-    F --> M[世代別モデル保存]
-  end
-  M -.->|次の実験で明示的に選択| T
-```
-
-通常の制御ツールにはUDP通信もあります。学習用LabではUnityが自動プレイし、Pythonがプロセスとログを管理します。
-ゲーム中にモデルを書き換えず、学習後も自動昇格させません。
-
-## 実測したこと
-
-2026-11-11に確認した4セッションでは、自然GO **530ゲーム**、最高 **3,341点**、新規スイカ **134個**、ダブルスイカ **0回**でした。
-条件は256反復・深さ4・固定5候補・学習rollout混合率0.5。seedとモデル世代が異なるため、平均値の差を強化の証拠にはしていません。
-[セッション別の結果](docs/RESULTS.md)と[公開集計JSON](Python/examples/portfolio/results.json)を掲載しています。
-
-2026-11-12の材料育成セッションでは、通常開始112ゲームと近似盤面続行112ゲームが全件自然GOで完了しました。
-近似盤面の続行で、**スイカ＋メロン＋パイナップルの新規共存を1件**観測しました。途中成果であり、ダブルスイカ達成ではありません。
-[初期状態・新規達成・続行成績を分けた結果](docs/LATEST_CURRICULUM_RESULTS.md)
-
-## 検証と再現性
-
-- Python回帰テストをGitHub Actionsで実行する構成を追加しています。[workflow](.github/workflows/python-tests.yml)
-- Unityの短時間検証では材料観測20項目・ルール127項目・MCTS861項目が通過しました。Unity検証はローカル実施でCIには含めません。
-- 旧Player／新Playerの観測ON・OFF各3手で、比較した公開物理状態・操作tick・実ゲーム乱数・root統計が一致しました。長時間の完全一致の証明ではありません。
-- 打ち切りを自然GOの0点ゲームにせず、未観測イベントを失敗ラベルに変換しません。
-- Train／Validationは元ゲームseedや初期系列でまとめ、同じ盤面の反復を独立試行として数えません。
-
-[クリーンな環境でのテスト手順](docs/REPRODUCIBILITY.md)
-
-## 現在の限界
-
-- 接触履歴など、Unity内部状態をスナップショットから完全には復元できません。近似盤面の続行は厳密な反実仮想ではありません。
-- 方策更新は結果重み付き模倣学習です。未選択行動の真の価値や最適方策を直接学んだものではありません。
-- 中間成果ボーナスは実験用です。通常得点を下げる可能性もあり、OFFモデルと別保存します。
-- Player、大規模ログ、学習データセットはGitに含めません。一部の研究スクリプトはローカル資産を必要とします。
-- 削除された旧Test予約情報を完全には復旧できていません。既知の開発データを未使用Testとして扱わず、将来の最終評価は別途予約したseedで行う方針です。
-
-## 読む順番
-
-1. [設計・追加開発の範囲・学んだこと](docs/ENGINEERING.md)
-2. [実測結果と比較上の注意](docs/RESULTS.md)
-3. [短い再現手順](docs/REPRODUCIBILITY.md)
-4. [材料育成の学習環境](docs/MATERIAL_PROGRESS_LEARNING_ENVIRONMENT.md)
-
-主な実装： [MCTS](Unity/Assets/Scenes/Script/MctsPlanner.cs) / [物理予測](Unity/Assets/Scenes/Script/SuikaPhysicsSimulator.cs) / [学習rollout](Unity/Assets/Scenes/Script/LearnedRolloutPlanner.cs) / [収集・学習](Python/double_watermelon_learning.py) / [材料観測](Unity/Assets/Scenes/Script/SuikaMaterialProgress.cs)
-
-動画はまだ掲載していません。上の画像は実ログの可視化で、ゲーム画面や録画ではありません。[動画の構成案](docs/DEMO_VIDEO_PLAN.md)
-
-## 開発について
-
-個人開発プロジェクトです。既存Unityゲーム基盤を利用し、主にAI・通信・実験・学習機能を追加しています。
-実装・調査・テスト作成には生成AI（Codex）を活用しています。実測・回帰テスト・採用しなかった結果も記録する方針です。
-このREADMEはゲーム基盤や素材をすべて独自制作したと主張するものではありません。
-
-開発ブランチは`develop`。Unity **2022.3.21f1**、Python **3.12**で検証しています。時系列資料は[開発記録](docs/DEVELOPMENT_LOG.md)に保存しています。
+- [設計・開発範囲](docs/ENGINEERING.md)
+- [実験結果](docs/RESULTS.md)
+- [最新の学習・収集結果](docs/LATEST_CURRICULUM_RESULTS.md)
+- [環境構築・テスト](docs/REPRODUCIBILITY.md)
+- [データ収集・学習](docs/MATERIAL_PROGRESS_LEARNING_ENVIRONMENT.md)
