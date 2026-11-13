@@ -25,6 +25,6 @@ public static class SuikaStandaloneDemoBuild {
         File.WriteAllText(folder+"/demo_policy.sha256",sha);
         File.Copy(Path.GetFullPath("../docs/AI_DEMO_START_HERE.txt"),folder+"/START_HERE.txt");
         File.Copy(Path.GetFullPath("../Python/examples/portfolio/latest_policy_provenance.json"),folder+"/model_provenance.json");
-        // No automatic upload: third-party game/art/audio redistribution review is outstanding.
+        // Upload remains a separate explicit action. Third-party rights review is outstanding.
     }
 }

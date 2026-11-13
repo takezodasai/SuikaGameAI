@@ -7,8 +7,8 @@ Windows / Unity **2022.3.21f1**。実際の果物・得点・NEXT・進化リン
 ビルド済みの専用デモは、フォルダ内の **AI-Demo.exeをダブルクリック**するだけで自動プレイを開始する。PythonやUnity Editorは不要。
 exeだけを取り出さず、`AI-Demo_Data`、DLL、モデルなどを同じフォルダに置く。
 
-**現在、exeの一般公開は保留中。** 画像・背景・音・元コードの入手元が分からず、再配布条件を確認できていない。
-ダウンロードリンクはまだ設けていない。[配布前の確認事項](AI_DEMO_DISTRIBUTION.md)
+[Windows版ZIPをダウンロード](https://github.com/takezodasai/SuikaGameAI/releases/download/ai-demo-v0.1.0/SuikaGameAI-AI-Demo-Windows-x64-v0.1.0.zip)し、「すべて展開」して起動する。Unity EditorもPythonも不要。
+非公式の実験用デモ。画像・背景・音・元コードの再配布条件の確認は未完了。[配布上の注意](AI_DEMO_DISTRIBUTION.md)
 
 - 画面上部：得点、落下数、思考時間、探索設定。
 - 画面下部：非公式のAI研究デモであること、手動操作不可、停止方法。
@@ -109,3 +109,11 @@ Escでゲームを停止。Python側のCtrl+Cでも、そのコマンドが起�
 `StandaloneAiDemo_02` をPythonなしで直接起動し、3落下・各256反復で正常停止。6.63秒、`drop_limit`、自然GOではない。実盤面不変監査が全判断true、予測Scene残留0、UDPエンドポイントなし。
 日本語の情報表示と結果画面を目視確認。停止後のEnter入力で再開せず、Escで終了することを確認した。
 Python回帰テスト543件中538件成功・5件skip。新ビルドでの自然GO完走・長時間安定性は今回未検証。
+
+
+### ZIP版の確認
+
+2026-11-13、配布用ZIPを新しいフォルダに展開し、`AI-Demo.exe` を直接起動して3落下を確認した。
+7.85秒、各256反復、予測Scene残留0、終了理由は `drop_limit`。AI自身の実行にPythonやEditorを使用していない。
+ZIP全ファイルのSHA256とCRCを検査し、デバッグ情報と研究ログは同梱しない。
+配布物の作成は開発者用の `Python/package_ai_demo.py --output <新規ZIPパス>` で行える。

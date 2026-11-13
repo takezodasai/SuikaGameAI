@@ -3,7 +3,7 @@
 ## 画面付きAIデモ
 
 [専用デモの手順](GUI_MODEL_PREVIEW.md)。見る人はビルド済みZIPを展開してexeを起動する構成。
-Python・Unity Editor・過去の収集データは不要。配布パッケージの一般公開は[権利確認](AI_DEMO_DISTRIBUTION.md)まで保留。
+Python・Unity Editor・過去の収集データは不要。[Windows版ZIP](https://github.com/takezodasai/SuikaGameAI/releases/tag/ai-demo-v0.1.0)を配布。[権利確認は未完了](AI_DEMO_DISTRIBUTION.md)。
 ソースからビルドする開発者だけUnity 2022.3.21f1が必要。
 
 ## Pythonテスト（Windows）

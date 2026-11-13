@@ -7,18 +7,21 @@ Unityの物理シミュレーションとMCTS、学習済み方策を使って�
 
 ## 実行方法
 
-1. このリポジトリを取得し、`Unity/` を **Unity 2022.3.21f1** で開きます。
-2. [ビルド手順](docs/GUI_MODEL_PREVIEW.md#開発者向けpython不要の専用playerをビルド)に従って、AI専用Playerを作成します。
-3. `Unity/Builds/StandaloneAiDemo_02/AI-Demo.exe` を起動します。
+**Windows 64bit対応。Unity・Pythonのインストールは不要です。**
+
+1. [AIデモをダウンロード](https://github.com/takezodasai/SuikaGameAI/releases/download/ai-demo-v0.1.0/SuikaGameAI-AI-Demo-Windows-x64-v0.1.0.zip)します。
+2. ZIPを右クリックして「すべて展開」します。
+3. 展開したフォルダの **AI-Demo.exe** をダブルクリックします。
 
 AIが自動でプレイします。**Escで停止し、結果画面でもう一度Escを押すと終了**します。
-ビルド後の実行にはPythonやUnity Editorは不要です。exeと隣接ファイルは同じフォルダに置いてください。
+exeだけを移動せず、隣接ファイルを同じフォルダに置いてください。
 
-- 画面：得点・落下数・思考時間・探索設定を表示
+- 表示：得点・落下数・思考時間・探索設定
 - 設定：MCTS256回、深さ4、固定5候補、学習rollout混合率50%
 - 操作：AI専用。手動プレイ不可。思考中は画面が一時停止します
 
-exeは素材の再配布条件が未確認のため、一般配布していません。[配布について](docs/AI_DEMO_DISTRIBUTION.md)
+非公式の実験用デモです。素材の権利確認は未完了です。[配布上の注意](docs/AI_DEMO_DISTRIBUTION.md)
+[ソースからのビルド手順](docs/GUI_MODEL_PREVIEW.md#開発者向けpython不要の専用playerをビルド)
 
 ## 構成
 
