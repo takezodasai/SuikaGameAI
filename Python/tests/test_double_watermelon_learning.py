@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from double_watermelon_learning import completed_trace, samples, audit_trial, summarize, train, sha, bounded_records
+from double_watermelon_learning import completed_trace, samples, audit_trial, summarize, train, sha, bounded_records, validate_view
 
 
 class CurriculumTests(unittest.TestCase):
@@ -144,6 +144,11 @@ class CurriculumTests(unittest.TestCase):
         p.write_text(''.join(json.dumps(r)+'\n' for r in rs));(self.p/'manifest.json').write_text(json.dumps(dict(replay_sha256=sha(p))))
         r=train(self.p,model,self.p/'generation',epochs=1,progress_bonus_points=10)
         self.assertEqual(r['learning_bonus']['states_with_bonus'],0)
+
+    def test_view_is_single_game_and_batch_remains_parallel(self):
+        validate_view(False,4,1000);validate_view(True,1,1)
+        with self.assertRaises(ValueError):validate_view(True,4,1)
+        with self.assertRaises(ValueError):validate_view(True,1,2)
 
 
 if __name__=='__main__':unittest.main()

@@ -49,6 +49,16 @@ Policy argmax: 0.5
 実際のMCTSは物理予測と即時GOの除外を含めて最終手を選びます。
 盤面は開発用データから採取しており、独立した性能評価には使いません。[出所](Python/examples/portfolio/provenance.json)
 
+## 最新モデルをUnity画面で1ゲーム見る
+
+[画面付きプレイの再現手順](docs/GUI_MODEL_PREVIEW.md)を用意しています。Unity 2022.3.21f1で表示用Playerをビルドした後、リポジトリルートで実行します。過去のデータセットは不要です。
+
+```powershell
+py -3.12 Python/play_public_model.py
+```
+
+実際の果物・得点・NEXTが見えるゲーム画面で、最新の公開凍結方策を使ったMCTSが通常開始から1ゲーム操作します。256反復・深さ4・固定5候補。同期探索中は画面が一時停止します。Escで停止でき、学習やモデル更新は行いません。短い確認は `--max-drops 3 --game-seconds 120`。モデルの強さの改善は未確認です。
+
 ## システム構成
 
 ```mermaid

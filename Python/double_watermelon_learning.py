@@ -29,6 +29,11 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
+def validate_view(view,workers,max_jobs):
+    if view and (workers!=1 or max_jobs!=1):
+        raise ValueError('GUI preview requires --workers 1 --max-jobs 1')
+
+
 def bounded_records(records, limit=64):
     """Stream a deterministic per-episode subset; retain first and last observations."""
     episodes = collections.defaultdict(list)
@@ -315,7 +320,7 @@ def audit_trial(folder, exit_code, error=None):
 
 def collect(dataset, out, model, workers=2, hours=8, max_jobs=1000, max_drops=100000,
             seconds=14400, resume=False, base_port=44800, exe=None, curriculum_policy=None,
-            material_observation=None, progress_bonus_points=0.):
+            material_observation=None, progress_bonus_points=0., view=False):
     from compare_watermelon_dynamic import active_players
     from suika_ai.parallel_play import check_ports, worker_specs
     dataset, out, model = map(lambda p:Path(p).resolve(), (dataset,out,model))
@@ -341,6 +346,7 @@ def collect(dataset, out, model, workers=2, hours=8, max_jobs=1000, max_drops=10
         workers, hours, seconds, max_drops, max_jobs, base_port = [plan[k] for k in ('workers','hours','seconds','max_drops','max_jobs','base_port')]
         manifest = load(dataset/'manifest.json')
         exe=Path(plan.get('exe',DEFAULT_EXE));assembly=exe.parent/'SuikaGameAI_Data/Managed/Assembly-CSharp.dll'
+        view=plan.get('view',False)
     else:
         if out.exists():
             raise FileExistsError(out)
@@ -350,7 +356,7 @@ def collect(dataset, out, model, workers=2, hours=8, max_jobs=1000, max_drops=10
             base_port=base_port, session=uuid.uuid4().hex, seed_base=secrets.randbelow(1000000000)+1000000000,
             curriculum='alternating normal game and train-only approximate fixture; fixed per game',
             native_resume=False, automatic_promotion=False,curriculum_policy=curriculum_policy,
-            material_progress=material_observation,progress_bonus_points=progress_bonus_points)
+            material_progress=material_observation,progress_bonus_points=progress_bonus_points,view=view)
         excluded=set(manifest['excluded_seeds'])
         for p in OUTPUTS.glob('rollout_selfplay_*/jobs/*/job.json'):excluded.add(load(p)['game_seed'])
         for p in OUTPUTS.glob('watermelon_*/jobs/*/job.json'):
@@ -360,8 +366,10 @@ def collect(dataset, out, model, workers=2, hours=8, max_jobs=1000, max_drops=10
         plan['replay_sessions']=[str(p.parent.resolve()) for p in sorted(OUTPUTS.glob('watermelon_*/plan.json'))
             if load(p).get('manifest_sha256')==plan['manifest_sha256']
             and (p.parent/'runtime.json').exists() and not load(p.parent/'runtime.json').get('active_jobs')]
+        validate_view(view,workers,max_jobs)
         out.mkdir(parents=True)
         write(out/'plan.json', plan)
+    validate_view(view,workers,max_jobs)
     for path, expected in [(model,plan['actor_sha256']),(exe,plan['exe_sha256']),(assembly,plan['assembly_sha256']),(dataset/'manifest.json',plan['manifest_sha256'])]:
         if sha(path)!=expected:
             raise ValueError('Pinned asset changed: '+str(path))
@@ -421,10 +429,15 @@ def collect(dataset, out, model, workers=2, hours=8, max_jobs=1000, max_drops=10
                 mode='learned',mixture=.5,final_selection='legacy',iterations=256,depth=4,
                 max_drops=max_drops,max_seconds=seconds,first_x=-1,material_progress=plan.get('material_progress',False))
             write(folder/'config.json',cfg);port=base_port+2*slot
-            args=[str(exe),'-batchmode','-nographics','--suika-audio','0','--suika-events','1',
+            args=[str(exe)]+([] if view else ['-batchmode','-nographics'])+['--suika-audio','0','--suika-events','1',
                 '--suika-seed',str(spec['game_seed']),'--suika-listen-port',str(port),'--suika-python-port',str(port+1),
                 '-suikaRuntimeProbe',str(folder/'runtime.jsonl'),'-suikaPolicySelfPlayLab',str(folder/'config.json'),'-logFile',str(folder/'player.log')]
-            proc=subprocess.Popen(args,creationflags=subprocess.CREATE_NO_WINDOW|subprocess.CREATE_NEW_PROCESS_GROUP|subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+            flags=subprocess.CREATE_NEW_PROCESS_GROUP|subprocess.BELOW_NORMAL_PRIORITY_CLASS
+            if not view:flags|=subprocess.CREATE_NO_WINDOW
+            startup=None
+            if view:
+                startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=1 # SW_SHOWNORMAL
+            proc=subprocess.Popen(args,creationflags=flags,startupinfo=startup)
             active[slot]=dict(proc=proc,job=job,folder=folder,began=time.monotonic(),progress=time.monotonic(),size=0)
             write(folder/'launch.json',dict(pid=proc.pid,command=args))
             emit('job_start',job=spec['index'],normal_start=spec['normal_start'],slot=slot)
@@ -639,16 +652,19 @@ def main():
     s.choices['collect'].add_argument('--exe',type=Path)
     s.choices['collect'].add_argument('--curriculum-policy',choices=['legacy','progress-balanced'])
     s.choices['collect'].add_argument('--material-progress',action=argparse.BooleanOptionalAction,default=None)
+    s.choices['collect'].add_argument('--view',action='store_true',help='Show one normal-start GUI game; requires workers=1/max-jobs=1, skips training')
     a=p.parse_args()
     if a.cmd=='prepare':r=prepare(a.output,a.max_roots);r={k:v for k,v in r.items() if k not in ('sources','fixtures','excluded_seeds')};r['manifest']=str(a.output/'manifest.json')
     elif a.cmd=='prepare-progress':
         from prepare_material_curriculum import prepare_progress
         r=prepare_progress(a.dataset,a.output,a.max_roots,a.source_limit)
     elif a.cmd=='collect':
-        r=collect(a.dataset,a.output,a.model,a.workers,a.hours,a.max_jobs,a.max_drops,a.game_seconds,a.resume,a.base_port,a.exe,a.curriculum_policy,a.material_progress,a.progress_bonus_points)
+        r=collect(a.dataset,a.output,a.model,a.workers,a.hours,a.max_jobs,a.max_drops,a.game_seconds,a.resume,a.base_port,a.exe,a.curriculum_policy,a.material_progress,a.progress_bonus_points,a.view)
         forced=load(a.output/'runtime.json').get('forced',False)
+        view=load(a.output/'plan.json').get('view',False)
         if forced:r['training_status']='skipped_after_forced_stop; completed experience preserved for later training'
-        if not forced and not a.no_train and sum(r[k]['natural_go'] for k in ('normal','approximate')):
+        if view:r['training_status']='skipped_for_single_game_GUI_preview'
+        if not view and not forced and not a.no_train and sum(r[k]['natural_go'] for k in ('normal','approximate')):
             cfg=load(a.output/'plan.json')
             sessions=[Path(x) for x in cfg.get('replay_sessions',[])]+[a.output]
             traces=[sha(p.parent/'trace.jsonl') for session in sessions for p in sorted(session.glob('jobs/*/attempt_*/result.json')) if load(p)['natural_go']]

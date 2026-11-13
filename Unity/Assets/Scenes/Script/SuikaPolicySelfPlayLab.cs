@@ -140,5 +140,12 @@ public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
             Time.timeScale=0;Write("end");}
         Application.Quit(reason=="error"?2:0);
     }
-    void OnGUI(){if(wall==null)return;GUI.Box(new Rect(8,8,600,90),"APPROXIMATE POST-WATERMELON LAB | Esc: stop\nScore "+ScoreManager.Instance.GetScore()+" | additional "+(ScoreManager.Instance.GetScore()-initialScore)+" | drops "+accepted+" | new watermelon "+newCreated+" | doubles "+doubles+"\nRollout MCTS "+cfg.mode+" "+cfg.iterations+" depth "+cfg.depth+" | "+planningMs.ToString("F1")+" ms | "+wall.Elapsed.TotalSeconds.ToString("F1")+" s");}
+    void OnGUI(){
+        if(wall==null)return;
+        string title=cfg.normal_start?"NORMAL GAME | LEARNED ROLLOUT MCTS":"APPROXIMATE FIXTURE | LEARNED ROLLOUT MCTS";
+        string material="";var e=ScoreManager.Instance.EpisodeEvents.Read().materials;
+        if(e!=null&&e.known)material="\nWatermelon "+e.watermelons+" | Melon "+e.melons+" | Pineapple "+e.pineapples;
+        GUI.Box(new Rect(8,8,660,116),title+" | Esc: stop\nScore "+ScoreManager.Instance.GetScore()+" | drops "+accepted+" | new watermelon "+newCreated+" | doubles "+doubles+
+            "\nIterations "+cfg.iterations+" | depth "+cfg.depth+" | candidates 5 | last thinking "+planningMs.ToString("F1")+" ms"+material);
+    }
 }

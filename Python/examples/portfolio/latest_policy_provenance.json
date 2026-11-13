@@ -1,0 +1,11 @@
+{
+  "generation": "gen_d9eb9e9bef0e",
+  "source_sha256": "84ffc9ae40fbe70b6c93fdd08a181128915e38dc749f286a659abad6e5760490",
+  "published_sha256": "02a9af5d8d5ed0402e8487f858ab2cb52f8d6ec9701951ac872a270065b22b4e",
+  "training_states": 52422,
+  "train_seed_groups": 575,
+  "validation_seed_groups": 145,
+  "progress_bonus_unit": 10,
+  "note": "Frozen experimental rollout policy. No demonstrated strength improvement; no independent test claim. Full source training metadata stays private; only native inference fields exported.",
+  "published_hash_normalization": "CRLF to LF"
+}
