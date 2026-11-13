@@ -25,10 +25,18 @@ public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
     [Serializable] class SearchAudit {public int rollout_calls,guided_calls,tree_actions,rollout_actions;public int[] rollout_by_depth;public int completed_iterations,max_depth,nodes;public long physics_ticks;public bool source_unchanged;public MctsPlanner.ActionMetric[] root;public MctsAdaptiveControl.Addition[] additions;public RootBudgetAllocation.Audit allocation;public int physics_advances;}
     SearchAudit Audit(StepPlanner.Decision p){if(p==null)return null;var r=p.mcts;int depth=0,tree=0,roll=0;foreach(var i in r.iterations){depth=Math.Max(depth,i.depth);foreach(bool v in i.rollout_steps){if(v)roll++;else tree++;}}return new SearchAudit{rollout_calls=r.rollout_calls,guided_calls=r.guided_calls,rollout_by_depth=r.rollout_by_depth,tree_actions=tree,rollout_actions=roll,completed_iterations=r.completed_iterations,max_depth=depth,nodes=r.decision_nodes,physics_ticks=r.total_physics_ticks,source_unchanged=r.source_unchanged,root=r.nodes[0].actions,additions=r.candidate_additions,allocation=null,physics_advances=r.physics_advances};}
     static SuikaPolicySelfPlayLab instance;static string configPath;
+    public static bool AiOnlyPresentation { get; private set; }
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)] static void SetPresentationMode(){
+        AiOnlyPresentation=SuikaStandaloneDemo.Active||Array.IndexOf(Environment.GetCommandLineArgs(),"-suikaPolicySelfPlayLab")>=0;
+    }
     Config cfg;PlayerController player;GameManager game;UDPCommunicatorUnity udp;StreamWriter log;
     System.Diagnostics.Stopwatch wall;bool running,active;int tick,accepted,completed,initialScore,initialWatermelons,maxPresent,newCreated,doubles,baseCreated,baseDoubles,eventIndex;
     Command command;string reason;double planningMs;AlternativeCandidateSelection.Choice finalChoice;CandidateRidgeModel ridgeModel;CandidateRidgeModel.Prediction ridgePrediction;
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)] static void Install(){var a=Environment.GetCommandLineArgs();int i=Array.IndexOf(a,"-suikaPolicySelfPlayLab");if(i>=0){configPath=a[i+1];instance=new GameObject("Watermelon continuation lab (APPROXIMATE)").AddComponent<SuikaPolicySelfPlayLab>();}}
+    public static void BeginDemo(string path){
+        if(instance!=null)throw new InvalidOperationException("Lab already active");
+        configPath=path;instance=new GameObject("AI-only research demonstration").AddComponent<SuikaPolicySelfPlayLab>();
+    }
     static void Observe(){if(instance!=null)instance.AfterPhysics();}
     static bool Insert(ref PlayerLoopSystem loop){if(loop.subSystemList==null)return false;var xs=new List<PlayerLoopSystem>(loop.subSystemList);for(int i=0;i<xs.Count;i++){if(xs[i].type==typeof(UnityEngine.PlayerLoop.FixedUpdate.Physics2DFixedUpdate)){xs.Insert(i+1,new PlayerLoopSystem{type=typeof(SuikaPolicySelfPlayLab),updateDelegate=Observe});loop.subSystemList=xs.ToArray();return true;}var c=xs[i];if(Insert(ref c)){xs[i]=c;loop.subSystemList=xs.ToArray();return true;}}return false;}
     void CountEvents(){
@@ -118,6 +126,8 @@ public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
         }
     }
     IEnumerator Start(){
+        // Demo-only input presentation: retain internal AI actions and Esc, block UI clicks.
+        foreach(var events in FindObjectsOfType<UnityEngine.EventSystems.EventSystem>())events.enabled=false;
         yield return null;yield return null;cfg=JsonUtility.FromJson<Config>(File.ReadAllText(configPath));if(cfg.mode!="baseline"&&cfg.mode!="learned"&&cfg.mode!="survey")throw new Exception("Unknown lab policy");
         if(cfg.final_selection!="legacy"&&cfg.final_selection!="alternative"&&cfg.final_selection!="ridge")throw new Exception("Unknown final selection policy");
         if(cfg.final_selection!="legacy")throw new Exception("Rollout experiment preserves original final selection");
@@ -138,14 +148,20 @@ public sealed class SuikaPolicySelfPlayLab : MonoBehaviour {
         using(log=new StreamWriter(new FileStream(cfg.output,FileMode.CreateNew))){wall=System.Diagnostics.Stopwatch.StartNew();Write("root");running=true;
             while(running)yield return null;
             Time.timeScale=0;Write("end");}
-        Application.Quit(reason=="error"?2:0);
+        if(SuikaStandaloneDemo.Active)SuikaStandaloneDemo.Finish(reason,ScoreManager.Instance.GetScore(),accepted,newCreated,doubles);
+        else Application.Quit(reason=="error"?2:0);
     }
+    GUIStyle demoText;
     void OnGUI(){
+        if(demoText==null){demoText=new GUIStyle(GUI.skin.box){fontSize=20,alignment=TextAnchor.MiddleLeft,wordWrap=true,padding=new RectOffset(14,14,8,8)};
+            demoText.font=Font.CreateDynamicFontFromOSFont(new[]{"Yu Gothic UI","Meiryo","Arial"},20);}
+        GUI.Box(new Rect(12,Screen.height-92,Mathf.Max(300,Screen.width-24),80),
+            "非公式のAI研究デモです。Aladdin Xとは関係ありません。\n"+
+            "自動操作のみ・手動プレイ不可 ｜ Escで停止",demoText);
         if(wall==null)return;
-        string title=cfg.normal_start?"NORMAL GAME | LEARNED ROLLOUT MCTS":"APPROXIMATE FIXTURE | LEARNED ROLLOUT MCTS";
-        string material="";var e=ScoreManager.Instance.EpisodeEvents.Read().materials;
-        if(e!=null&&e.known)material="\nWatermelon "+e.watermelons+" | Melon "+e.melons+" | Pineapple "+e.pineapples;
-        GUI.Box(new Rect(8,8,660,116),title+" | Esc: stop\nScore "+ScoreManager.Instance.GetScore()+" | drops "+accepted+" | new watermelon "+newCreated+" | doubles "+doubles+
-            "\nIterations "+cfg.iterations+" | depth "+cfg.depth+" | candidates 5 | last thinking "+planningMs.ToString("F1")+" ms"+material);
+        string title=cfg.normal_start?"AI研究デモ｜通常開始から自動プレイ":"AI研究デモ｜近似盤面からの実験";
+        GUI.Box(new Rect(12,12,Mathf.Min(600,Screen.width-24),140),title+
+            "\n得点 "+ScoreManager.Instance.GetScore()+" ｜ 落下 "+accepted+"回 ｜ 思考 "+(planningMs/1000).ToString("F2")+"秒"+
+            "\n探索 "+cfg.iterations+"回 ／ 深さ "+cfg.depth+" ／ 5候補\n新規スイカ "+newCreated+"個 ｜ ダブルスイカ "+doubles+"回",demoText);
     }
 }

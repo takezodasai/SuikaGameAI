@@ -14,15 +14,15 @@ def module(name):
 
 
 class PortfolioTests(unittest.TestCase):
-    def test_public_demo_is_normalized_and_reproducible(self):
-        demo=module('demo');a=demo.run();self.assertEqual(a,demo.run())
-        self.assertEqual([c['x'] for c in a['candidates']],[0,.25,.5,.75,1])
-        self.assertAlmostEqual(sum(c['probability'] for c in a['candidates']),1)
-        self.assertTrue(all(0<=c['probability']<=1 for c in a['candidates']))
-
-    def test_model_has_native_compatible_schema(self):
-        m=json.loads((HERE/'policy.json').read_text());self.assertEqual(len(m['weights']),213)
-        self.assertEqual(m['version'],'candidate-linear213-v1')
+    def test_published_model_is_normalized_and_reproducible(self):
+        from learned_rollout import probabilities
+        model=json.loads((HERE/'latest_policy.json').read_text())
+        sample=json.loads((HERE/'observation.json').read_text())
+        a=probabilities(model,sample);b=probabilities(model,sample)
+        self.assertEqual(list(a),list(b))
+        self.assertAlmostEqual(float(sum(a)),1)
+        self.assertEqual(len(model['weights']),213)
+        self.assertEqual(model['version'],'candidate-linear213-v1')
 
     def test_frozen_collection_aggregate_is_not_a_strength_claim(self):
         r=json.loads((HERE/'results.json').read_text());cs=r['cohorts']

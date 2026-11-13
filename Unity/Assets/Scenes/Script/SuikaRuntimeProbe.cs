@@ -18,10 +18,15 @@ public sealed class SuikaRuntimeProbe : MonoBehaviour
     {
         var args=Environment.GetCommandLineArgs();int i=Array.IndexOf(args,"-suikaRuntimeProbe");if(i<0)return;
         if(i+1>=args.Length)throw new ArgumentException("Probe output required");
-        var obj=new GameObject("Opt-in runtime measurement");var p=obj.AddComponent<SuikaRuntimeProbe>();Instance=p;
-        Directory.CreateDirectory(Path.GetDirectoryName(args[i+1]));p.log=new StreamWriter(new FileStream(args[i+1],FileMode.CreateNew));
+        BeginDemo(args[i+1]);var p=Instance;
         MctsPerformance.Optimized=Array.IndexOf(args,"-suikaMctsBaseline")<0;
         int j=Array.IndexOf(args,"-suikaProbeFixture");p.fixturePath=j>=0?args[j+1]:null;
+    }
+    public static void BeginDemo(string path){
+        if(Instance!=null)throw new InvalidOperationException("Runtime probe already active");
+        var obj=new GameObject("Opt-in runtime measurement");var p=obj.AddComponent<SuikaRuntimeProbe>();Instance=p;
+        Directory.CreateDirectory(Path.GetDirectoryName(path));p.log=new StreamWriter(new FileStream(path,FileMode.CreateNew));
+        MctsPerformance.Optimized=true;
         p.Write(new Header {evt="start",thread=System.Threading.Thread.CurrentThread.ManagedThreadId,dt=Time.fixedDeltaTime,maximum_delta=Time.maximumDeltaTime});
     }
     [Serializable] class Header {public string evt;public int thread;public float dt,maximum_delta;}

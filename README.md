@@ -8,7 +8,7 @@ Physics-based MCTS and versioned self-play learning, built with Unity / C# and P
 
 ![実プレイログの盤面を可視化した概要。ゲーム画面の録画ではありません。](docs/assets/overview.png)
 
-[Unityなしで試す](#unityなしで試す) · [設計と担当範囲](docs/ENGINEERING.md) · [実測結果](docs/RESULTS.md) · [最新の材料育成実験](docs/LATEST_CURRICULUM_RESULTS.md) · [実行・テスト](docs/REPRODUCIBILITY.md)
+[AIのプレイを見る](#aiのプレイを見る) · [設計と担当範囲](docs/ENGINEERING.md) · [実測結果](docs/RESULTS.md) · [最新の材料育成実験](docs/LATEST_CURRICULUM_RESULTS.md) · [実行・テスト](docs/REPRODUCIBILITY.md)
 
 ## 何を作っているか
 
@@ -23,41 +23,25 @@ Physics-based MCTS and versioned self-play learning, built with Unity / C# and P
 | 経験からの学習 | 小型方策によるrollout、実測returnを使う重み付き模倣学習、世代別保存 |
 | 材料育成の観測 | スイカ＋メロン／パイナップルなどを、実ゲームの合体通知で記録 |
 
-## Unityなしで試す
+## AIのプレイを見る
 
-**Python 3.12とNumPyだけ**で、同梱の実ログ由来の盤面と小型方策を読み込み、5候補の確率を計算できます。
-Unity、GPU、大規模ログは不要です。
+**目標の操作は「ZIPを展開して、AI-Demo.exeをダブルクリック」だけです。**
+PythonやUnity Editorを入れずに、画面付きの自動プレイを実行できる専用ビルドを追加しました。
+果物・得点・NEXTが表示され、AIが自動で落下位置を選びます。手動プレイは無効、Escで停止できます。
 
-```powershell
-git clone https://github.com/takezodasai/SuikaGameAI.git
-Set-Location SuikaGameAI
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install numpy==2.2.3
-.\.venv\Scripts\python.exe Python\examples\portfolio\demo.py
-```
+**現在、ダウンロード用exeの一般公開は保留中です。** 既存のゲーム基盤・画像・音の再配布条件を確認しています。
+非公式表記やAI専用化だけで配布が許可されるとは扱いません。
+[動作とビルド手順](docs/GUI_MODEL_PREVIEW.md) / [配布前の確認事項](docs/AI_DEMO_DISTRIBUTION.md)
 
-```text
-x=0.00  probability=0.2036
-x=0.25  probability=0.2049
-x=0.50  probability=0.2173
-x=0.75  probability=0.1961
-x=1.00  probability=0.1781
-Policy argmax: 0.5
-```
+| 画面で分かること | 内容 |
+|---|---|
+| AIの判断 | 学習方策を組み込んだMCTSが自動プレイ |
+| ゲームの進行 | 得点・落下数・NEXT・果物の合体 |
+| 探索の負荷 | 探索回数・深さ・直近の思考時間 |
+| 操作方法 | Escで停止。終了結果を確認して閉じる |
 
-これは**rollout方策の推論デモ**です。MCTSや物理計算を実行せず、この確率だけで実ゲームの最善手が分かるものではありません。
-実際のMCTSは物理予測と即時GOの除外を含めて最終手を選びます。
-盤面は開発用データから採取しており、独立した性能評価には使いません。[出所](Python/examples/portfolio/provenance.json)
-
-## 最新モデルをUnity画面で1ゲーム見る
-
-[画面付きプレイの再現手順](docs/GUI_MODEL_PREVIEW.md)を用意しています。Unity 2022.3.21f1で表示用Playerをビルドした後、リポジトリルートで実行します。過去のデータセットは不要です。
-
-```powershell
-py -3.12 Python/play_public_model.py
-```
-
-実際の果物・得点・NEXTが見えるゲーム画面で、最新の公開凍結方策を使ったMCTSが通常開始から1ゲーム操作します。256反復・深さ4・固定5候補。同期探索中は画面が一時停止します。Escで停止でき、学習やモデル更新は行いません。短い確認は `--max-drops 3 --game-seconds 120`。モデルの強さの改善は未確認です。
+学習済みモデルは同梱済み。256回探索・深さ4・固定5候補、rolloutの50%で学習方策を使います。
+同期探索中は画面が一時停止します。この世代が従来MCTSより強いことはまだ確認できていません。
 
 ## システム構成
 

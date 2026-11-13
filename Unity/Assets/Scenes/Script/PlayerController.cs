@@ -71,16 +71,16 @@ public partial class PlayerController : MonoBehaviour
         // Clamp before rendering or accepting a manual drop; do not warp at fixed X.
         if (currentFruit != null) EnsureHeldWithinRange(out _);
 
-        if (!StepControlLocked && (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)))
+        if (!SuikaPolicySelfPlayLab.AiOnlyPresentation && !StepControlLocked && (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)))
         {
             MoveLeft();
         }
-        else if (!StepControlLocked && (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)))
+        else if (!SuikaPolicySelfPlayLab.AiOnlyPresentation && !StepControlLocked && (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)))
         {
             MoveRight();
         }
 
-        if (!StepControlLocked && Input.GetKeyDown(KeyCode.Return))
+        if (!SuikaPolicySelfPlayLab.AiOnlyPresentation && !StepControlLocked && Input.GetKeyDown(KeyCode.Return))
         {
             DropFruit();
         }

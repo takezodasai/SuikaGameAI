@@ -29,6 +29,7 @@ public partial class UDPCommunicatorUnity : MonoBehaviour  // UDP通信を管理
 
     void Start()                                   // Start()はゲーム開始時に1回呼ばれる
     {
+        if(SuikaStandaloneDemo.Active){BeginEpisode("");return;} // Offline AI demo: no remote control/socket.
         if(SuikaWorkerOptions.Worker)
         {
             listenPort=SuikaWorkerOptions.ListenPort;pythonPort=SuikaWorkerOptions.PythonPort;

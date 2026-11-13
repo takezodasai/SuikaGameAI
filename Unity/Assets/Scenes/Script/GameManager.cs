@@ -34,7 +34,7 @@ public class GameManager : MonoBehaviour
         {
             CheckGameOver();
         }
-        else if (Input.GetKeyDown(KeyCode.Return)) // Enterキーで即リセット
+        else if (!SuikaPolicySelfPlayLab.AiOnlyPresentation && Input.GetKeyDown(KeyCode.Return)) // Manual reset outside AI demo only.
         {
             RestartGameImmediately();
         }

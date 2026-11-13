@@ -1,23 +1,10 @@
 # 実行と再現性
 
-## 公開サンプル（Unity不要）
+## 画面付きAIデモ
 
-リポジトリルートでPython 3.12を使用する。
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install numpy==2.2.3
-.\.venv\Scripts\python.exe Python\examples\portfolio\demo.py --json
-.\.venv\Scripts\python.exe Python\examples\portfolio\render_overview.py --check
-```
-
-213係数の方策と実ログの公開観測を同梱している。入力は盤面・保持果物・公開NEXT・現在得点。
-未公開の未来や最終得点は含まない。候補確率のデモであり、物理探索・ゲーム性能の再現ではない。
-サンプルは開発データ由来で、独立した評価データではない。
-
-## 実際のUnity画面で1ゲーム
-
-[画面付き再現手順](GUI_MODEL_PREVIEW.md)。公開された最新方策と専用ランチャーを使用し、私有データセットなしで通常開始からプレイする。Unity Playerのビルドが必要。
+[専用デモの手順](GUI_MODEL_PREVIEW.md)。見る人はビルド済みZIPを展開してexeを起動する構成。
+Python・Unity Editor・過去の収集データは不要。配布パッケージの一般公開は[権利確認](AI_DEMO_DISTRIBUTION.md)まで保留。
+ソースからビルドする開発者だけUnity 2022.3.21f1が必要。
 
 ## Pythonテスト（Windows）
 
@@ -33,7 +20,7 @@ Unityや長時間シミュレーションはCIに含めず、ライブ試験は�
 テスト用の予約seedは合成fixtureを注入し、ローカル実験ログに依存させない。
 実験本体では予約情報がなければ失敗する動作を維持し、架空のTest予約ファイルは作らない。
 
-2026-11-13、ステージ済みソースだけを展開した一時チェックアウトで、公開デモ・図の検査・全539テストを確認した。
+2026-11-13、ステージ済みソースだけを展開した一時チェックアウトで、当時の推論デモ・図の検査・全539テストを確認した。
 534件成功、既存のUnity診断ファイルが必要な5件skip。ローカルの実験ログを参照せずに通ることを確認している。
 
 ## Unityプロジェクト
@@ -71,5 +58,5 @@ $repo = (Get-Location).Path
 ## CI
 
 [workflow](../.github/workflows/python-tests.yml)は読取権限のみで、固定SHAの公式checkout/setup-pythonを使う。
-推論デモ、図の出所検査、Python回帰試験を実行する。
+公開モデルの検査、図の出所検査、Python回帰試験を実行する。
 参考：[GitHub公式 Python CI](https://docs.github.com/en/actions/tutorials/build-and-test-code/python)、[setup-python](https://github.com/actions/setup-python)。
